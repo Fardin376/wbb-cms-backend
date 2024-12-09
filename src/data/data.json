@@ -1,0 +1,422 @@
+[
+  {
+    "title": {
+      "en": "Building a Sustainable Bangladesh",
+      "bn": "টেকসই বাংলাদেশের জন্য কাজ"
+    },
+    "category": {
+      "en": "Sustainability",
+      "bn": "টেকসই উন্নয়ন"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123456,
+        "blocks": [
+          {
+            "id": "block1",
+            "type": "paragraph",
+            "data": {
+              "text": "We are dedicated to creating a sustainable future for Bangladesh through renewable energy and environmental initiatives."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123456,
+        "blocks": [
+          {
+            "id": "block1_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমরা নবায়নযোগ্য শক্তি এবং পরিবেশগত উদ্যোগের মাধ্যমে বাংলাদেশের টেকসই ভবিষ্যৎ গঠনে নিবেদিত।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/sustainable-bangladesh.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 5,
+    "featured": false
+  },
+  {
+    "title": {
+      "en": "Empowering Women for Leadership",
+      "bn": "নারীদের নেতৃত্বের জন্য ক্ষমতায়ন"
+    },
+    "category": {
+      "en": "Women Empowerment",
+      "bn": "নারী ক্ষমতায়ন"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123457,
+        "blocks": [
+          {
+            "id": "block2",
+            "type": "paragraph",
+            "data": {
+              "text": "Our programs focus on empowering women to take on leadership roles in their communities."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123457,
+        "blocks": [
+          {
+            "id": "block2_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমাদের প্রোগ্রামগুলি নারীদের তাদের সম্প্রদায়ে নেতৃত্বের ভূমিকা গ্রহণের জন্য ক্ষমতায়ন করে।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/women-leadership.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 4,
+    "featured": false
+  },
+  {
+    "title": {
+      "en": "Education for All",
+      "bn": "সবাইয়ের জন্য শিক্ষা"
+    },
+    "category": {
+      "en": "Education",
+      "bn": "শিক্ষা"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123458,
+        "blocks": [
+          {
+            "id": "block3",
+            "type": "paragraph",
+            "data": {
+              "text": "We believe that education is a fundamental right for every child in Bangladesh."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123458,
+        "blocks": [
+          {
+            "id": "block3_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমরা বিশ্বাস করি যে শিক্ষা প্রতিটি শিশুর মৌলিক অধিকার।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/education-for-all.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 5,
+    "featured": true
+  },
+  {
+    "title": {
+      "en": "Clean Water Access Initiative",
+      "bn": "পরিষ্কার পানির প্রবেশাধিকার উদ্যোগ"
+    },
+    "category": {
+      "en": "Health",
+      "bn": "স্বাস্থ্য"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123459,
+        "blocks": [
+          {
+            "id": "block4",
+            "type": "paragraph",
+            "data": {
+              "text": "Our clean water initiative ensures safe drinking water for underprivileged communities."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123459,
+        "blocks": [
+          {
+            "id": "block4_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমাদের পরিষ্কার পানি উদ্যোগ দরিদ্র সম্প্রদায়ের জন্য নিরাপদ পানির নিশ্চয়তা দেয়।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/clean-water.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 4,
+    "featured": false
+  },
+  {
+    "title": {
+      "en": "Youth Leadership Development",
+      "bn": "যুব নেতৃত্বের উন্নয়ন"
+    },
+    "category": {
+      "en": "Youth Empowerment",
+      "bn": "যুব ক্ষমতায়ন"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123460,
+        "blocks": [
+          {
+            "id": "block5",
+            "type": "paragraph",
+            "data": {
+              "text": "We focus on developing leadership skills in young people to prepare them for the future."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123460,
+        "blocks": [
+          {
+            "id": "block5_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমরা যুবকদের ভবিষ্যতের জন্য প্রস্তুত করতে নেতৃত্বের দক্ষতা বিকাশের উপর গুরুত্ব দিচ্ছি।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/youth-leadership.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 5,
+    "featured": true
+  },
+  {
+    "title": {
+      "en": "Agriculture and Rural Development",
+      "bn": "কৃষি এবং গ্রামীণ উন্নয়ন"
+    },
+    "category": {
+      "en": "Agriculture",
+      "bn": "কৃষি"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123461,
+        "blocks": [
+          {
+            "id": "block6",
+            "type": "paragraph",
+            "data": {
+              "text": "We are improving agricultural practices to boost productivity in rural areas."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123461,
+        "blocks": [
+          {
+            "id": "block6_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমরা গ্রামীণ অঞ্চলে উত্পাদনশীলতা বাড়াতে কৃষি চর্চা উন্নত করছি।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/agriculture-development.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 4,
+    "featured": false
+  },
+  {
+    "title": {
+      "en": "Healthcare for All Initiative",
+      "bn": "সবার জন্য স্বাস্থ্যসেবা উদ্যোগ"
+    },
+    "category": {
+      "en": "Healthcare",
+      "bn": "স্বাস্থ্যসেবা"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123462,
+        "blocks": [
+          {
+            "id": "block7",
+            "type": "paragraph",
+            "data": {
+              "text": "We aim to provide basic healthcare services to underprivileged communities."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123462,
+        "blocks": [
+          {
+            "id": "block7_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমরা দরিদ্র সম্প্রদায়কে প্রাথমিক স্বাস্থ্যসেবা প্রদান করার লক্ষ্য রাখছি।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/healthcare-initiative.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 5,
+    "featured": false
+  },
+  {
+    "title": {
+      "en": "Climate Action for Bangladesh",
+      "bn": "বাংলাদেশের জন্য জলবায়ু পদক্ষেপ"
+    },
+    "category": {
+      "en": "Environment",
+      "bn": "পরিবেশ"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123463,
+        "blocks": [
+          {
+            "id": "block8",
+            "type": "paragraph",
+            "data": {
+              "text": "Our climate action program aims to raise awareness and take actions to combat climate change."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123463,
+        "blocks": [
+          {
+            "id": "block8_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমাদের জলবায়ু পদক্ষেপ প্রোগ্রাম জলবায়ু পরিবর্তনের বিরুদ্ধে পদক্ষেপ নিতে এবং সচেতনতা বৃদ্ধির লক্ষ্যে কাজ করে।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/climate-action.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 5,
+    "featured": true
+  },
+  {
+    "title": {
+      "en": "Community Development Programs",
+      "bn": "সম্প্রদায় উন্নয়ন প্রোগ্রাম"
+    },
+    "category": {
+      "en": "Community",
+      "bn": "সম্প্রদায়"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123464,
+        "blocks": [
+          {
+            "id": "block9",
+            "type": "paragraph",
+            "data": {
+              "text": "We work closely with local communities to enhance infrastructure and social welfare."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123464,
+        "blocks": [
+          {
+            "id": "block9_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমরা অবকাঠামো এবং সামাজিক কল্যাণ উন্নত করতে স্থানীয় সম্প্রদায়ের সাথে ঘনিষ্ঠভাবে কাজ করছি।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/community-development.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 4,
+    "featured": false
+  },
+  {
+    "title": {
+      "en": "Digital Literacy for All",
+      "bn": "সবার জন্য ডিজিটাল সাক্ষরতা"
+    },
+    "category": {
+      "en": "Education",
+      "bn": "শিক্ষা"
+    },
+    "content": {
+      "en": {
+        "time": 1721190123465,
+        "blocks": [
+          {
+            "id": "block10",
+            "type": "paragraph",
+            "data": {
+              "text": "We are teaching digital literacy to help individuals thrive in an increasingly digital world."
+            }
+          }
+        ],
+        "version": "2.30.2"
+      },
+      "bn": {
+        "time": 1721190123465,
+        "blocks": [
+          {
+            "id": "block10_bn",
+            "type": "paragraph",
+            "data": {
+              "text": "আমরা মানুষের ডিজিটাল জ্ঞান শিক্ষাচ্ছি যাতে তারা ক্রমবর্ধমান ডিজিটাল বিশ্বে উন্নতি করতে পারে।"
+            }
+          }
+        ],
+        "version": "2.30.2"
+      }
+    },
+    "coverImg": "https://example.com/digital-literacy.jpg",
+    "author": "670f87c77670974e55d4f079",
+    "rating": 5,
+    "featured": true
+  }
+]
