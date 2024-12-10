@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Layout = require('../models/layout.model');
 const auth = require('../middleware/auth');
-const isAdmin = require('../middleware/isAdminPosts');
+const isAdmin = require('../middleware/isAdmin');
 
 // Apply auth middleware
 router.use(auth);
@@ -11,19 +11,18 @@ router.use(isAdmin);
 // Get all layouts
 router.get('/all-layouts', async (req, res) => {
   try {
-    const layouts = await Layout.find()
-      .sort({ createdAt: -1 });
-    
+    const layouts = await Layout.find().sort({ createdAt: -1 });
+
     res.status(200).json({
       success: true,
       layouts,
-      count: layouts.length
+      count: layouts.length,
     });
   } catch (error) {
     console.error('Error fetching layouts:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching layouts'
+      message: 'Error fetching layouts',
     });
   }
 });
@@ -32,12 +31,12 @@ router.get('/all-layouts', async (req, res) => {
 router.post('/create', async (req, res) => {
   try {
     const { name, identifier, content } = req.body;
-    
+
     // Validate required fields
     if (!name || !identifier || !content) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields',
       });
     }
 
@@ -45,18 +44,18 @@ router.post('/create', async (req, res) => {
       name,
       identifier,
       content,
-      createdBy: req.user._id
+      createdBy: req.user._id,
     });
 
     res.status(201).json({
       success: true,
-      layout
+      layout,
     });
   } catch (error) {
     console.error('Error creating layout:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating layout'
+      message: 'Error creating layout',
     });
   }
 });
@@ -66,37 +65,36 @@ router.put('/update/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { name, identifier, content, isActive } = req.body;
-    
+
     // Only allow specific fields to be updated
     const updates = {
       ...(name && { name }),
       ...(identifier && { identifier }),
       ...(content && { content }),
-      ...(typeof isActive === 'boolean' && { isActive })
+      ...(typeof isActive === 'boolean' && { isActive }),
     };
 
-    const layout = await Layout.findByIdAndUpdate(
-      id,
-      updates,
-      { new: true, runValidators: true }
-    );
+    const layout = await Layout.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
 
     if (!layout) {
       return res.status(404).json({
         success: false,
-        message: 'Layout not found'
+        message: 'Layout not found',
       });
     }
 
     res.json({
       success: true,
-      layout
+      layout,
     });
   } catch (error) {
     console.error('Error updating layout:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating layout'
+      message: 'Error updating layout',
     });
   }
 });
@@ -105,25 +103,25 @@ router.put('/update/:id', async (req, res) => {
 router.delete('/delete/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const layout = await Layout.findByIdAndDelete(id);
-    
+
     if (!layout) {
       return res.status(404).json({
         success: false,
-        message: 'Layout not found'
+        message: 'Layout not found',
       });
     }
 
     res.json({
       success: true,
-      message: 'Layout deleted successfully'
+      message: 'Layout deleted successfully',
     });
   } catch (error) {
     console.error('Error deleting layout:', error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting layout'
+      message: 'Error deleting layout',
     });
   }
 });
@@ -137,7 +135,7 @@ router.patch('/toggle-status/:id', async (req, res) => {
     if (typeof isActive !== 'boolean') {
       return res.status(400).json({
         success: false,
-        message: 'isActive must be a boolean value'
+        message: 'isActive must be a boolean value',
       });
     }
 
@@ -150,19 +148,19 @@ router.patch('/toggle-status/:id', async (req, res) => {
     if (!layout) {
       return res.status(404).json({
         success: false,
-        message: 'Layout not found'
+        message: 'Layout not found',
       });
     }
 
     res.json({
       success: true,
-      layout
+      layout,
     });
   } catch (error) {
     console.error('Error toggling layout status:', error);
     res.status(500).json({
       success: false,
-      message: 'Error toggling layout status'
+      message: 'Error toggling layout status',
     });
   }
 });

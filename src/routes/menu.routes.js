@@ -1,10 +1,11 @@
 const express = require('express');
 const Menu = require('../models/menu.model');
-const { isAdminUser } = require('../middleware/isAdminUser');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const sanitize = require('mongo-sanitize');
 const auth = require('../middleware/auth');
+const isAdmin = require('../middleware/isAdmin');
+const verifyToken = require('../middleware/tokenVerification');
 
 const router = express.Router();
 
@@ -26,6 +27,8 @@ router.get('/public/get-menu-items', async (req, res) => {
 });
 
 router.use(auth);
+router.use(isAdmin);
+router.use(verifyToken);
 
 // Rate limiting
 const createMenuLimiter = rateLimit({
@@ -77,7 +80,6 @@ const checkDuplicateTitle = async (req, res, next) => {
 
 router.post(
   '/create-menu',
-  isAdminUser,
   createMenuLimiter,
   validateMenuInput,
   checkDuplicateTitle,
@@ -111,7 +113,7 @@ router.post(
   }
 );
 
-router.get('/get-all-menu-items', isAdminUser, async (req, res) => {
+router.get('/get-all-menu-items', async (req, res) => {
   try {
     const menuItems = await Menu.find({ isActive: true }).sort({ order: 1 });
 
@@ -127,7 +129,7 @@ router.get('/get-all-menu-items', isAdminUser, async (req, res) => {
     });
   }
 });
-router.get('/get-all-active-menu-items', isAdminUser, async (req, res) => {
+router.get('/get-all-active-menu-items', isAdmin, async (req, res) => {
   try {
     const isActive = req.query.isActive === 'true'; // Convert to boolean
     const menuItems = await Menu.find({ isActive }).sort({ order: 1 });
@@ -158,7 +160,6 @@ router.get('/get-sub-menus/:id', async (req, res) => {
 
 router.patch(
   '/update-menu/:id',
-  isAdminUser,
   validateMenuInput,
   checkDuplicateTitle,
   async (req, res) => {
@@ -186,7 +187,7 @@ router.patch(
   }
 );
 
-router.patch('/update-menu-order', isAdminUser, async (req, res) => {
+router.patch('/update-menu-order', isAdmin, async (req, res) => {
   const { order } = req.body;
 
   try {
@@ -203,7 +204,7 @@ router.patch('/update-menu-order', isAdminUser, async (req, res) => {
   }
 });
 
-router.delete('/delete-menu-item/:id', isAdminUser, async (req, res) => {
+router.delete('/delete-menu-item/:id', isAdmin, async (req, res) => {
   try {
     const menuItemId = req.params.id;
 
@@ -262,7 +263,7 @@ router.delete('/delete-menu-item/:id', isAdminUser, async (req, res) => {
   }
 });
 
-router.get('/get-menu/:id', isAdminUser, async (req, res) => {
+router.get('/get-menu/:id', isAdmin, async (req, res) => {
   try {
     const menuItem = await Menu.findById(req.params.id);
     if (!menuItem) {
@@ -284,7 +285,7 @@ router.get('/get-menu/:id', isAdminUser, async (req, res) => {
   }
 });
 
-router.get('/check-title', isAdminUser, async (req, res) => {
+router.get('/check-title', isAdmin, async (req, res) => {
   try {
     const { title, lang, excludeId } = req.query;
     const query = { [`title.${lang}`]: title };

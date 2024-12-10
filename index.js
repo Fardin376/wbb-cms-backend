@@ -62,52 +62,52 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Initialize CSRF protection with updated configuration
-const csrfMiddleware = csrf({
-  cookie: {
-    key: 'XSRF-TOKEN',
-    httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/',
-  },
-  value: (req) => {
-    const token = req.headers['x-xsrf-token'] || req.cookies['XSRF-TOKEN'];
+// const csrfMiddleware = csrf({
+//   cookie: {
+//     key: 'XSRF-TOKEN',
+//     httpOnly: false,
+//     secure: process.env.NODE_ENV === 'production',
+//     sameSite: true,
+//     path: '/',
+//   },
+//   value: (req) => {
+//     const token = req.headers['x-xsrf-token'] || req.cookies['XSRF-TOKEN'];
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('CSRF Token from request:', {
-        header: req.headers['x-xsrf-token'],
-        cookie: req.cookies['XSRF-TOKEN'],
-        using: token,
-      });
-    }
+//     if (process.env.NODE_ENV === 'development') {
+//       console.log('CSRF Token from request:', {
+//         header: req.headers['x-xsrf-token'],
+//         cookie: req.cookies['XSRF-TOKEN'],
+//         using: token,
+//       });
+//     }
 
-    return token;
-  },
-});
+//     return token;
+//   },
+// });
 
 // Routes that don't need CSRF
 app.use('/api/public', publicRoutes);
 
 // CSRF token endpoint
-app.get('/api/csrf-token', csrfMiddleware, (req, res) => {
-  try {
-    const token = req.csrfToken();
-    res.cookie('XSRF-TOKEN', token, {
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      httpOnly: false,
-      path: '/',
-    });
-    res.json({ csrfToken: token });
-  } catch (error) {
-    console.error('CSRF Token Generation Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate CSRF token',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
-    });
-  }
-});
+// app.get('/api/csrf-token',  (req, res) => {
+//   try {
+//     const token = req.csrfToken();
+//     res.cookie('XSRF-TOKEN', token, {
+//       secure: process.env.NODE_ENV === 'production',
+//       sameSite: true,
+//       httpOnly: false,
+//       path: '/',
+//     });
+//     res.json({ csrfToken: token });
+//   } catch (error) {
+//     console.error('CSRF Token Generation Error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to generate CSRF token',
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+//     });
+//   }
+// });
 
 // Auth routes with conditional CSRF
 app.use(
@@ -116,24 +116,25 @@ app.use(
     if (req.path === '/login') {
       next();
     } else {
-      csrfMiddleware(req, res, next);
+      // csrfMiddleware(req, res, next);
+      console.log(res);
     }
   },
   require('./src/routes/auth.user.routes')
 );
 
 // Protected routes with CSRF
-app.use('/api/menu', csrfMiddleware, require('./src/routes/menu.routes'));
-app.use('/api/pages', csrfMiddleware, require('./src/routes/page.routes'));
-app.use('/api/layouts', csrfMiddleware, require('./src/routes/layout.routes'));
+app.use('/api/menu', require('./src/routes/menu.routes'));
+app.use('/api/pages', require('./src/routes/page.routes'));
+app.use('/api/layouts', require('./src/routes/layout.routes'));
 app.use(
   '/api/categories',
-  csrfMiddleware,
+
   require('./src/routes/category.routes')
 );
-app.use('/api/posts', csrfMiddleware, require('./src/routes/posts.routes'));
-app.use('/api/gallery', csrfMiddleware, require('./src/routes/gallery.routes'));
-app.use('/api/pdfs', csrfMiddleware, require('./src/routes/pdf.routes'));
+app.use('/api/posts', require('./src/routes/posts.routes'));
+app.use('/api/gallery', require('./src/routes/gallery.routes'));
+app.use('/api/pdfs', require('./src/routes/pdf.routes'));
 
 // Error handler for CSRF
 app.use((err, req, res, next) => {

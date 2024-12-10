@@ -4,7 +4,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://wbb-cms-frontend.vercel.app',
-  'https://wbb-cms-admin-panel.vercel.app'
+  'https://wbb-cms-admin-panel.vercel.app',
 ];
 
 const corsMiddleware = cors({
@@ -27,18 +27,18 @@ const corsMiddleware = cors({
     'Content-Length',
     'Content-MD5',
     'Date',
-    'X-Api-Version'
-  ]
+    'X-Api-Version',
+  ],
 });
 
 const cookieSettings = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  sameSite: true,
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
-module.exports = { 
+module.exports = {
   corsMiddleware,
-  cookieSettings 
+  cookieSettings,
 };

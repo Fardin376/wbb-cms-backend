@@ -3,7 +3,7 @@ const Post = require('../models/posts.model'); // Adjust the path to your Post m
 const Page = require('../models/page.model');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const isAdminPosts = require('../middleware/isAdminPosts');
+const isAdminPosts = require('../middleware/isAdmin');
 const mongoose = require('mongoose');
 const Gallery = require('../models/gallery.model');
 const rateLimit = require('express-rate-limit');
@@ -16,7 +16,7 @@ router.use(isAdminPosts);
 // Add rate limiting middleware
 const createPostLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // limit each IP to 100 requests per windowMs
 });
 
 // Create a new post
@@ -26,27 +26,44 @@ router.post('/create', createPostLimiter, async (req, res) => {
 
   try {
     const { title, content, pages, category, createdBy } = req.body;
-    
+
     // Validate required fields
-    if (!title?.en || !title?.bn || !content?.en || !content?.bn || !pages?.length || !category || !createdBy) {
-      return res.status(400).json({ 
-        success: false, 
+    if (
+      !title?.en ||
+      !title?.bn ||
+      !content?.en ||
+      !content?.bn ||
+      !pages?.length ||
+      !category ||
+      !createdBy
+    ) {
+      return res.status(400).json({
+        success: false,
         message: 'Missing required fields',
         details: {
-          title: !title?.en || !title?.bn ? 'Title is required in both languages' : null,
-          content: !content?.en || !content?.bn ? 'Content is required in both languages' : null,
+          title:
+            !title?.en || !title?.bn
+              ? 'Title is required in both languages'
+              : null,
+          content:
+            !content?.en || !content?.bn
+              ? 'Content is required in both languages'
+              : null,
           pages: !pages?.length ? 'At least one page is required' : null,
           category: !category ? 'Category is required' : null,
           createdBy: !createdBy ? 'Creator ID is required' : null,
-        }
+        },
       });
     }
 
     // Validate ObjectIds
-    if (!mongoose.Types.ObjectId.isValid(category) || !mongoose.Types.ObjectId.isValid(createdBy)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid ID format for category or creator' 
+    if (
+      !mongoose.Types.ObjectId.isValid(category) ||
+      !mongoose.Types.ObjectId.isValid(createdBy)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ID format for category or creator',
       });
     }
 
@@ -60,7 +77,9 @@ router.post('/create', createPostLimiter, async (req, res) => {
       category,
       createdBy,
       isActive: true,
-      slug: `${title.en.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`
+      slug: `${title.en
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
     };
 
     // Create the post
@@ -74,19 +93,21 @@ router.post('/create', createPostLimiter, async (req, res) => {
     );
 
     await session.commitTransaction();
-    res.status(201).json({ 
-      success: true, 
-      post: newPost[0] 
+    res.status(201).json({
+      success: true,
+      post: newPost[0],
     });
-
   } catch (error) {
     await session.abortTransaction();
     console.error('Error creating post:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Error creating post',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? error : null
+      error:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error : null,
     });
   } finally {
     session.endSession();
@@ -115,11 +136,11 @@ router.get('/all-posts', async (req, res) => {
 
     const count = await Post.countDocuments(query);
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       posts,
       totalPages: Math.ceil(count / limit),
-      currentPage: page
+      currentPage: page,
     });
   } catch (error) {
     console.error('Error fetching posts:', error);
@@ -184,10 +205,17 @@ router.put('/update/:id', async (req, res) => {
     const { title, content, pages, category, createdBy } = req.body;
 
     // Validate required fields
-    if (!title?.en || !title?.bn || !content?.en || !content?.bn || !pages?.length || !category) {
+    if (
+      !title?.en ||
+      !title?.bn ||
+      !content?.en ||
+      !content?.bn ||
+      !pages?.length ||
+      !category
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields',
       });
     }
 
@@ -196,7 +224,7 @@ router.put('/update/:id', async (req, res) => {
     if (!existingPost) {
       return res.status(404).json({
         success: false,
-        message: 'Post not found'
+        message: 'Post not found',
       });
     }
 
@@ -222,7 +250,7 @@ router.put('/update/:id', async (req, res) => {
         content,
         pages,
         category,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       },
       { new: true, session }
     );
@@ -230,16 +258,15 @@ router.put('/update/:id', async (req, res) => {
     await session.commitTransaction();
     res.json({
       success: true,
-      post: updatedPost
+      post: updatedPost,
     });
-
   } catch (error) {
     await session.abortTransaction();
     console.error('Error updating post:', error);
     res.status(500).json({
       success: false,
       message: 'Error updating post',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   } finally {
     session.endSession();
@@ -250,21 +277,21 @@ router.put('/update/:id', async (req, res) => {
 router.delete('/delete/:id', async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
-  
+
   try {
     // Validate ID format
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid post ID format' 
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid post ID format',
       });
     }
 
     const post = await Post.findById(req.params.id);
     if (!post) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Post not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found',
       });
     }
 
@@ -276,51 +303,56 @@ router.delete('/delete/:id', async (req, res) => {
     );
 
     // Delete associated gallery items
-    await Gallery.deleteMany({ 
-      'usageTypes.isPost': true, 
-      'usageTypes.postId': post._id 
-    }, { session });
+    await Gallery.deleteMany(
+      {
+        'usageTypes.isPost': true,
+        'usageTypes.postId': post._id,
+      },
+      { session }
+    );
 
     // Find and delete associated PDFs
     const pdfs = await Pdf.find({
-      'usageTypes.postId': post._id
+      'usageTypes.postId': post._id,
     });
 
     // Delete PDF files from GridFS and their references
     if (pdfs.length > 0) {
       const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
-        bucketName: 'pdfs'
+        bucketName: 'pdfs',
       });
 
       // Delete each PDF file from GridFS and its reference in MongoDB
-      await Promise.all(pdfs.map(async (pdf) => {
-        try {
-          // Delete from GridFS
-          await bucket.delete(pdf.fileId);
-          // Delete PDF reference from MongoDB
-          await Pdf.findByIdAndDelete(pdf._id, { session });
-        } catch (error) {
-          console.error(`Error deleting PDF ${pdf._id}:`, error);
-          // Continue with other deletions even if one fails
-        }
-      }));
+      await Promise.all(
+        pdfs.map(async (pdf) => {
+          try {
+            // Delete from GridFS
+            await bucket.delete(pdf.fileId);
+            // Delete PDF reference from MongoDB
+            await Pdf.findByIdAndDelete(pdf._id, { session });
+          } catch (error) {
+            console.error(`Error deleting PDF ${pdf._id}:`, error);
+            // Continue with other deletions even if one fails
+          }
+        })
+      );
     }
 
     // Delete the post
     await Post.findByIdAndDelete(post._id, { session });
 
     await session.commitTransaction();
-    res.status(200).json({ 
-      success: true, 
-      message: 'Post and associated data (including PDFs) deleted successfully' 
+    res.status(200).json({
+      success: true,
+      message: 'Post and associated data (including PDFs) deleted successfully',
     });
   } catch (error) {
     await session.abortTransaction();
     console.error('Error deleting post:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Error deleting post',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   } finally {
     session.endSession();
@@ -348,12 +380,12 @@ router.patch('/toggle-status/:id', async (req, res) => {
 
     // Update associated gallery images status
     await Gallery.updateMany(
-      { 
+      {
         'usageTypes.isPost': true,
-        'usageTypes.postId': post._id 
+        'usageTypes.postId': post._id,
       },
-      { 
-        status: isActive ? 'active' : 'inactive' 
+      {
+        status: isActive ? 'active' : 'inactive',
       },
       { session }
     );
@@ -383,15 +415,15 @@ router.get('/by-page/:pageId', async (req, res) => {
     const { category } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(pageId)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid page ID format' 
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid page ID format',
       });
     }
 
-    let query = { 
+    let query = {
       pages: pageId,
-      isActive: true 
+      isActive: true,
     };
 
     // Add category filter if provided
@@ -407,13 +439,13 @@ router.get('/by-page/:pageId', async (req, res) => {
     res.status(200).json({
       success: true,
       posts,
-      count: posts.length
+      count: posts.length,
     });
   } catch (error) {
     console.error('Error fetching page posts:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching page posts'
+      message: 'Error fetching page posts',
     });
   }
 });
@@ -426,9 +458,9 @@ router.patch('/toggle-featured/:id', auth, async (req, res) => {
 
     const post = await Post.findByIdAndUpdate(
       id,
-      { 
+      {
         isFeatured,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       },
       { new: true }
     );
@@ -436,20 +468,20 @@ router.patch('/toggle-featured/:id', auth, async (req, res) => {
     if (!post) {
       return res.status(404).json({
         success: false,
-        message: 'Post not found'
+        message: 'Post not found',
       });
     }
 
     res.json({
       success: true,
       message: 'Featured status updated successfully',
-      post
+      post,
     });
   } catch (error) {
     console.error('Error updating featured status:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating featured status'
+      message: 'Error updating featured status',
     });
   }
 });
@@ -457,23 +489,23 @@ router.patch('/toggle-featured/:id', auth, async (req, res) => {
 // Update the public featured posts route
 router.get('/public/featured', async (req, res) => {
   try {
-    const posts = await Post.find({ 
+    const posts = await Post.find({
       isActive: true,
-      isFeatured: true 
+      isFeatured: true,
     })
-    .populate('category', 'name')
-    .sort({ createdAt: -1 })
-    .lean();
+      .populate('category', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.status(200).json({
       success: true,
-      posts
+      posts,
     });
   } catch (error) {
     console.error('Error fetching featured posts:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching posts'
+      message: 'Error fetching posts',
     });
   }
 });

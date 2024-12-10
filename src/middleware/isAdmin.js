@@ -1,4 +1,4 @@
-const isAdminPosts = (req, res, next) => {
+const isAdmin = (req, res, next) => {
   // Check if user exists and has a role
   if (!req.user || !req.user.role) {
     return res.status(401).json({
@@ -8,7 +8,7 @@ const isAdminPosts = (req, res, next) => {
   }
 
   // Check if user has required role
-  const allowedRoles = ['superadmin', 'admin', 'editor'];
+  const allowedRoles = ['superadmin', 'admin'];
   if (!allowedRoles.includes(req.user.role)) {
     return res.status(403).json({
       success: false,
@@ -19,4 +19,4 @@ const isAdminPosts = (req, res, next) => {
   next();
 };
 
-module.exports = isAdminPosts;
+module.exports = isAdmin;

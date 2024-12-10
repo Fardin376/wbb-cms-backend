@@ -1,27 +1,25 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
-const JWT_secret = process.env.JWT_SECRET_KEY;
 
-// Updated function to accept both userId and role (optional)
-const generateToken = async (userId, role) => {
+const generateToken = async (userId, role = null) => {
   try {
-    let userRole = role;
-
-    // If role is not passed, fetch the user to get their role
-    if (!userRole) {
+    // Fetch user role only if not provided
+    if (!role) {
       const user = await User.findById(userId);
-      if (!user) {
-        throw new Error('User not found!');
+      if (!user || !user.role) {
+        throw new Error('User not found or role is missing.');
       }
-      userRole = user.role;
+      role = user.role;
     }
 
-    // Create JWT token
-    const token = jwt.sign({ userId, role: userRole }, process.env.JWT_SECRET_KEY);
+    // Create and return token
+    const token = jwt.sign({ userId, role }, process.env.JWT_SECRET_KEY, {
+      expiresIn: '1h', // Set token expiration time for security
+    });
 
     return token;
   } catch (error) {
-    console.error('Error generating token:', error.message); // Improved logging
+    console.error('Error generating token:', error.message);
     throw error;
   }
 };
