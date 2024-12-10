@@ -1,5 +1,10 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
+const { cookieSettings } = require('./cors');
+
+const setAuthCookie = (res, token) => {
+  res.cookie('token', token, cookieSettings);
+};
 
 const auth = async (req, res, next) => {
   try {

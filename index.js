@@ -1,3 +1,5 @@
+require('events').EventEmitter.defaultMaxListeners = 15;
+
 const express = require('express');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
@@ -5,9 +7,10 @@ const cookieParser = require('cookie-parser');
 const csrf = require('csurf');
 const rateLimit = require('express-rate-limit');
 const bodyParser = require('body-parser');
-const corsMiddleware = require('./src/middleware/cors');
+const { corsMiddleware, cookieSettings } = require('./src/middleware/cors');
 const path = require('path');
 const ensureUploadDir = require('./src/utils/ensureUploadDir');
+const publicRoutes = require('./src/routes/public.routes');
 
 // Load environment variables
 dotenv.config();
@@ -18,6 +21,19 @@ const port = process.env.PORT || 5000;
 // Basic middleware
 app.use(cookieParser());
 app.use(corsMiddleware);
+
+app.use((req, res, next) => {
+  res.cookie = res.cookie.bind(res);
+  const originalCookie = res.cookie;
+  res.cookie = function (name, value, options = {}) {
+    return originalCookie.call(this, name, value, {
+      ...cookieSettings,
+      ...options,
+    });
+  };
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(
@@ -51,28 +67,26 @@ const csrfMiddleware = csrf({
     key: 'XSRF-TOKEN',
     httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/'
+    // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/',
   },
   value: (req) => {
-    const token = 
-      req.headers['x-xsrf-token'] || 
-      req.cookies['XSRF-TOKEN'];
-    
+    const token = req.headers['x-xsrf-token'] || req.cookies['XSRF-TOKEN'];
+
     if (process.env.NODE_ENV === 'development') {
       console.log('CSRF Token from request:', {
         header: req.headers['x-xsrf-token'],
         cookie: req.cookies['XSRF-TOKEN'],
-        using: token
+        using: token,
       });
     }
-    
+
     return token;
-  }
+  },
 });
 
 // Routes that don't need CSRF
-app.use('/api/public', require('./src/routes/public.routes'));
+app.use('/api/public', publicRoutes);
 
 // CSRF token endpoint
 app.get('/api/csrf-token', csrfMiddleware, (req, res) => {
@@ -80,9 +94,9 @@ app.get('/api/csrf-token', csrfMiddleware, (req, res) => {
     const token = req.csrfToken();
     res.cookie('XSRF-TOKEN', token, {
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       httpOnly: false,
-      path: '/'
+      path: '/',
     });
     res.json({ csrfToken: token });
   } catch (error) {
@@ -90,25 +104,33 @@ app.get('/api/csrf-token', csrfMiddleware, (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to generate CSRF token',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 });
 
 // Auth routes with conditional CSRF
-app.use('/api/auth', (req, res, next) => {
-  if (req.path === '/login') {
-    next();
-  } else {
-    csrfMiddleware(req, res, next);
-  }
-}, require('./src/routes/auth.user.routes'));
+app.use(
+  '/api/auth',
+  (req, res, next) => {
+    if (req.path === '/login') {
+      next();
+    } else {
+      csrfMiddleware(req, res, next);
+    }
+  },
+  require('./src/routes/auth.user.routes')
+);
 
 // Protected routes with CSRF
 app.use('/api/menu', csrfMiddleware, require('./src/routes/menu.routes'));
 app.use('/api/pages', csrfMiddleware, require('./src/routes/page.routes'));
 app.use('/api/layouts', csrfMiddleware, require('./src/routes/layout.routes'));
-app.use('/api/categories', csrfMiddleware, require('./src/routes/category.routes'));
+app.use(
+  '/api/categories',
+  csrfMiddleware,
+  require('./src/routes/category.routes')
+);
 app.use('/api/posts', csrfMiddleware, require('./src/routes/posts.routes'));
 app.use('/api/gallery', csrfMiddleware, require('./src/routes/gallery.routes'));
 app.use('/api/pdfs', csrfMiddleware, require('./src/routes/pdf.routes'));
@@ -120,12 +142,12 @@ app.use((err, req, res, next) => {
       path: req.path,
       headers: req.headers,
       cookies: req.cookies,
-      error: err.message
+      error: err.message,
     });
     return res.status(403).json({
       success: false,
       message: 'Invalid CSRF token',
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
   next(err);

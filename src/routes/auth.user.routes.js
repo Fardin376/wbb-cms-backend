@@ -14,7 +14,7 @@ const csrfProtection = csrf({
     key: 'XSRF-TOKEN',
     httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   },
 });
 
@@ -52,7 +52,7 @@ router.post('/login', async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      // sameSite: 'none',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: '/',
       domain: 'vercel.app', // Remove the leading dot
@@ -69,7 +69,7 @@ router.post('/login', async (req, res) => {
     const csrfToken = require('crypto').randomBytes(32).toString('hex');
     res.cookie('XSRF-TOKEN', csrfToken, {
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       httpOnly: false,
       path: '/',
       domain: process.env.NODE_ENV === 'production' ? '.vercel.app' : undefined,
@@ -147,12 +147,12 @@ router.post('/logout', verifyToken, (req, res) => {
   res.clearCookie('token', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   });
   res.clearCookie('XSRF-TOKEN', {
     httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   });
   res.json({ success: true, message: 'Logged out successfully' });
 });
@@ -252,7 +252,7 @@ router.get('/check-auth', verifyToken, async (req, res) => {
     const token = req.csrfToken();
     res.cookie('XSRF-TOKEN', token, {
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       httpOnly: false,
       path: '/',
     });

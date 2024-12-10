@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const cors = require('../middleware/cors');
+const { corsMiddleware } = require('../middleware/cors');
 const Page = require('../models/page.model');
 const Menu = require('../models/menu.model');
 const Post = require('../models/posts.model');
@@ -10,7 +10,7 @@ const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 
 // Apply CORS specifically for public routes
-router.use(cors);
+router.use(corsMiddleware);
 
 // Add rate limiting
 const limiter = rateLimit({
@@ -73,8 +73,8 @@ router.get('/pages', async (req, res) => {
 router.get('/pages/:slug(*)', async (req, res) => {
   try {
     const normalizedSlug = req.params.slug
-      .replace(/^\/+|\/+$/g, '')  // Remove leading/trailing slashes
-      .replace(/\/+/g, '/');      // Replace multiple slashes with single slash
+      .replace(/^\/+|\/+$/g, '') // Remove leading/trailing slashes
+      .replace(/\/+/g, '/'); // Replace multiple slashes with single slash
 
     console.log('Looking for page with normalized slug:', normalizedSlug);
 
