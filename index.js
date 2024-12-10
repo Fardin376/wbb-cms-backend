@@ -67,7 +67,7 @@ const csrfMiddleware = csrf({
     key: 'XSRF-TOKEN',
     httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
-    // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/',
   },
   value: (req) => {
@@ -94,7 +94,7 @@ app.get('/api/csrf-token', csrfMiddleware, (req, res) => {
     const token = req.csrfToken();
     res.cookie('XSRF-TOKEN', token, {
       secure: process.env.NODE_ENV === 'production',
-      // sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       httpOnly: false,
       path: '/',
     });
@@ -156,6 +156,10 @@ app.use((err, req, res, next) => {
 // General error handler
 app.use(require('./src/middleware/errorHandler'));
 
+app.get('/', (req, res) => {
+  res.send('Welcome to the WBB CMS Backend!');
+});
+
 // MongoDB connection
 mongoose
   .connect(process.env.MONGODB_URI)
@@ -164,10 +168,6 @@ mongoose
     await ensureUploadDir();
     app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
-    });
-
-    app.get('/', (req, res) => {
-      res.send('Welcome to the WBB CMS Backend!');
     });
   })
   .catch((error) => {
