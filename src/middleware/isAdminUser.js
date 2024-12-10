@@ -1,11 +1,26 @@
 const isAdminUser = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).send({
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+      });
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({
       success: false,
-      message: 'Unauthorized access! Admin access required.',
+      message: 'Error checking admin status',
     });
   }
-  next();
 };
 
-module.exports = isAdminUser;
+module.exports = { isAdminUser };

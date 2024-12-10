@@ -15,43 +15,9 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Move this before any other middleware
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
-
-// Add logging middleware for debugging
-app.use('/uploads', (req, res, next) => {
-  console.log('Static file request:', {
-    url: req.url,
-    fullPath: path.join(__dirname, 'public/uploads', req.url)
-  });
-  next();
-});
-
-// Then add your other middleware and routes
-app.use(corsMiddleware);
-
-// Then rate limiter with more lenient settings for development
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Higher limit for development
-  message: {
-    error: 'Too many requests from this IP, please try again later.',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => {
-    // Skip rate limiting for development environment and public routes
-    return (
-      process.env.NODE_ENV === 'development' ||
-      req.path.startsWith('/api/public')
-    );
-  },
-});
-
-app.use(limiter);
-
-// Rest of your middleware...
+// Basic middleware
 app.use(cookieParser());
+app.use(corsMiddleware);
 app.use(express.json({ limit: '50mb' }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(
@@ -62,83 +28,129 @@ app.use(
   })
 );
 
-// Set timeout
-app.use((req, res, next) => {
-  res.setTimeout(120000, () => {
-    console.log('Request has timed out.');
-    res.status(408).send('Request has timed out.');
-  });
-  next();
+// Static files
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+
+// Rate limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100,
+  message: { error: 'Too many requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) =>
+    process.env.NODE_ENV === 'development' ||
+    req.path.startsWith('/api/public'),
 });
 
-// CSRF protection middleware
-const csrfProtection = csrf({
+app.use(limiter);
+
+// Initialize CSRF protection with updated configuration
+const csrfMiddleware = csrf({
   cookie: {
-    httpOnly: true,
+    key: 'XSRF-TOKEN',
+    httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/'
   },
+  value: (req) => {
+    const token = 
+      req.headers['x-xsrf-token'] || 
+      req.cookies['XSRF-TOKEN'];
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('CSRF Token from request:', {
+        header: req.headers['x-xsrf-token'],
+        cookie: req.cookies['XSRF-TOKEN'],
+        using: token
+      });
+    }
+    
+    return token;
+  }
 });
 
-const publicRoutes = require('./src/routes/public.routes');
-const userRoutes = require('./src/routes/auth.user.routes');
-const menuRoutes = require('./src/routes/menu.routes');
-const pageRoutes = require('./src/routes/page.routes');
-const layoutRoutes = require('./src/routes/layout.routes');
-const categoryRoutes = require('./src/routes/category.routes');
-const postRoutes = require('./src/routes/posts.routes');
-const galleryRoutes = require('./src/routes/gallery.routes');
-const pdfRoutes = require('./src/routes/pdf.routes');
+// Routes that don't need CSRF
+app.use('/api/public', require('./src/routes/public.routes'));
 
-// Public routes (before CSRF and auth middleware)
-app.use('/api/public', publicRoutes);
-
-// Then add your CSRF and other middleware
-app.use(csrfProtection);
-
-// Protected routes
-app.use('/api/auth', userRoutes);
-app.use('/api/menu', menuRoutes);
-app.use('/api/pages', pageRoutes);
-app.use('/api/layouts', layoutRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/posts', postRoutes);
-app.use('/api/gallery', galleryRoutes);
-app.use('/api/pdfs', pdfRoutes);
-
-// CSRF Token endpoint (now csrfToken function will be available)
-app.get('/api/csrf-token', (req, res) => {
+// CSRF token endpoint
+app.get('/api/csrf-token', csrfMiddleware, (req, res) => {
   try {
     const token = req.csrfToken();
+    res.cookie('XSRF-TOKEN', token, {
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      httpOnly: false,
+      path: '/'
+    });
     res.json({ csrfToken: token });
   } catch (error) {
-    console.error('Error generating CSRF token:', error);
+    console.error('CSRF Token Generation Error:', error);
     res.status(500).json({
-      error: 'Failed to generate CSRF token',
-      details:
-        process.env.NODE_ENV === 'development' ? error.message : undefined,
+      success: false,
+      message: 'Failed to generate CSRF token',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// Error handling middleware
-const errorHandler = require('./src/middleware/errorHandler');
-app.use(errorHandler);
+// Auth routes with conditional CSRF
+app.use('/api/auth', (req, res, next) => {
+  if (req.path === '/login') {
+    next();
+  } else {
+    csrfMiddleware(req, res, next);
+  }
+}, require('./src/routes/auth.user.routes'));
 
-// Connect to MongoDB
+// Protected routes with CSRF
+app.use('/api/menu', csrfMiddleware, require('./src/routes/menu.routes'));
+app.use('/api/pages', csrfMiddleware, require('./src/routes/page.routes'));
+app.use('/api/layouts', csrfMiddleware, require('./src/routes/layout.routes'));
+app.use('/api/categories', csrfMiddleware, require('./src/routes/category.routes'));
+app.use('/api/posts', csrfMiddleware, require('./src/routes/posts.routes'));
+app.use('/api/gallery', csrfMiddleware, require('./src/routes/gallery.routes'));
+app.use('/api/pdfs', csrfMiddleware, require('./src/routes/pdf.routes'));
+
+// Error handler for CSRF
+app.use((err, req, res, next) => {
+  if (err.code === 'EBADCSRFTOKEN') {
+    console.error('CSRF Error:', {
+      path: req.path,
+      headers: req.headers,
+      cookies: req.cookies,
+      error: err.message
+    });
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid CSRF token',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+  next(err);
+});
+
+// General error handler
+app.use(require('./src/middleware/errorHandler'));
+
+// MongoDB connection
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(async () => {
     console.log('Connected to MongoDB successfully');
-    
-    // Ensure upload directory exists
     await ensureUploadDir();
-    
     app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
+    });
+
+    app.get('/', (req, res) => {
+      res.send('Welcome to the WBB CMS Backend!');
     });
   })
   .catch((error) => {
     console.error('MongoDB connection error:', error);
     process.exit(1);
   });
+
+module.exports = app;

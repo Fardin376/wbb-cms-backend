@@ -1,11 +1,22 @@
 const express = require('express');
 const User = require('../models/user.model');
-const auth = require('../middleware/auth');
-const isAdminUser = require('../middleware/isAdminUser');
-const verifyToken = require('../middleware/tokenVerification');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const verifyToken = require('../middleware/tokenVerification');
+const { isAdminUser } = require('../middleware/isAdminUser');
+const csrf = require('csurf');
+const generateToken = require('../middleware/generateToken');
+
+// Initialize CSRF middleware
+const csrfProtection = csrf({
+  cookie: {
+    key: 'XSRF-TOKEN',
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  },
+});
 
 //user registration
 router.post('/register', async (req, res) => {
@@ -35,54 +46,118 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Create token with user ID and role
-    const token = jwt.sign(
-      {
-        userId: user._id,
-        role: user.role,
-      },
-      process.env.JWT_SECRET_KEY,
-      { expiresIn: '24h' }
-    );
+    const token = await generateToken(user._id, user.role);
 
-    // Set cookie
+    // Set cookie with more specific options
     res.cookie('token', token, {
       httpOnly: true,
       secure: true,
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000,
-      path: '/'
+      sameSite: 'none',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/',
+      domain: 'vercel.app', // Remove the leading dot
     });
 
-    res.json({
+    // Log cookie setting
+    console.log('Setting cookie:', {
+      token: token.substring(0, 20) + '...',
+      domain: 'vercel.app',
+      path: '/',
+    });
+
+    // Set CSRF cookie with explicit domain
+    const csrfToken = require('crypto').randomBytes(32).toString('hex');
+    res.cookie('XSRF-TOKEN', csrfToken, {
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      httpOnly: false,
+      path: '/',
+      domain: process.env.NODE_ENV === 'production' ? '.vercel.app' : undefined,
+    });
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Login successful:', {
+        userId: user._id,
+        cookies: res.getHeaders()['set-cookie'],
+      });
+    }
+
+    res.status(200).json({
       success: true,
       user: {
-        id: user._id,
+        _id: user._id,
         username: user.username,
         email: user.email,
         role: user.role,
       },
     });
   } catch (error) {
+    console.error('Login error:', error);
     res.status(500).json({
       success: false,
       message: 'Login failed',
-      error: error.message,
     });
   }
 });
 
-//logout user
-router.post('/logout', async (req, res) => {
+// Add auth check endpoint
+router.get('/check', async (req, res) => {
   try {
-    res.clearCookie('token', { path: '/' });
-    res.status(200).send({ message: 'Logged out successfully!' });
+    const token = req.cookies.token;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token found',
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      },
+    });
   } catch (error) {
-    console.log('Failed to log out', error);
-    res.status(500).json({ message: 'Logout failed!' });
+    console.error('Auth check error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Invalid token',
+    });
   }
 });
 
+// Protected routes (with CSRF)
+
+//logout user
+router.post('/logout', verifyToken, (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  });
+  res.clearCookie('XSRF-TOKEN', {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  });
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
+router.use(csrfProtection);
 //get all users
 router.get('/users', verifyToken, async (req, res) => {
   try {
@@ -108,8 +183,8 @@ router.get('/users/current', verifyToken, async (req, res) => {
         id: user._id,
         username: user.username,
         email: user.email,
-        role: user.role
-      }
+        role: user.role,
+      },
     });
   } catch (error) {
     console.error('Error fetching user:', error);
@@ -162,21 +237,41 @@ router.get('/verify-token', verifyToken, async (req, res) => {
   }
 });
 
-router.get('/check-auth', auth, async (req, res) => {
+// Check auth status
+router.get('/check-auth', verifyToken, async (req, res) => {
   try {
+    const user = await User.findById(req.user.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Refresh CSRF token
+    const token = req.csrfToken();
+    res.cookie('XSRF-TOKEN', token, {
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      httpOnly: false,
+      path: '/',
+    });
+
     res.json({
       success: true,
       user: {
-        id: req.user._id,
-        username: req.user.username,
-        email: req.user.email,
-        role: req.user.role,
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Error checking authentication status',
+      details:
+        process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 });
