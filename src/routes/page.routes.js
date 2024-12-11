@@ -8,7 +8,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 
-const auth = require('../middleware/auth');
+// const auth = require('../middleware/auth');
 
 const createPageValidation = [
   body('name').trim().isLength({ min: 2, max: 100 }),
@@ -120,7 +120,7 @@ router.get('/public/by-slug/:slug', async (req, res) => {
 });
 
 // Protected routes below
-router.use(auth);
+// router.use(auth);
 
 // Create a new page
 router.post('/create', limiter, createPageValidation, async (req, res) => {

@@ -4,7 +4,7 @@ const multer = require('multer');
 const { GridFSBucket } = require('mongodb');
 const Pdf = require('../models/pdf.model');
 const router = express.Router();
-const auth = require('../middleware/auth');
+// const auth = require('../middleware/auth');
 const rateLimit = require('express-rate-limit');
 const stream = require('stream');
 
@@ -15,7 +15,7 @@ const uploadLimiter = rateLimit({
 });
 
 // Protected routes
-router.use(auth);
+// router.use(auth);
 
 // Configure multer for memory storage
 const upload = multer({

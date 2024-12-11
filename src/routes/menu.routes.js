@@ -3,7 +3,7 @@ const Menu = require('../models/menu.model');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const sanitize = require('mongo-sanitize');
-const auth = require('../middleware/auth');
+// const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/isAdmin');
 const verifyToken = require('../middleware/tokenVerification');
 
@@ -26,7 +26,24 @@ router.get('/public/get-menu-items', async (req, res) => {
   }
 });
 
-router.use(auth);
+router.get('/get-all-menu-items', async (req, res) => {
+  try {
+    const menuItems = await Menu.find({ isActive: true }).sort({ order: 1 });
+
+    res.status(200).json({
+      success: true,
+      data: menuItems,
+    });
+  } catch (error) {
+    console.error('Error fetching menu items:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve menu items.',
+    });
+  }
+});
+
+// router.use(auth);
 router.use(isAdmin);
 router.use(verifyToken);
 
@@ -113,22 +130,7 @@ router.post(
   }
 );
 
-router.get('/get-all-menu-items', async (req, res) => {
-  try {
-    const menuItems = await Menu.find({ isActive: true }).sort({ order: 1 });
 
-    res.status(200).json({
-      success: true,
-      data: menuItems,
-    });
-  } catch (error) {
-    console.error('Error fetching menu items:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve menu items.',
-    });
-  }
-});
 router.get('/get-all-active-menu-items', isAdmin, async (req, res) => {
   try {
     const isActive = req.query.isActive === 'true'; // Convert to boolean

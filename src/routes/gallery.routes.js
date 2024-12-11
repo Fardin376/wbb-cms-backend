@@ -2,10 +2,10 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Gallery = require('../models/gallery.model');
 const router = express.Router();
-const auth = require('../middleware/auth');
+// const auth = require('../middleware/auth');
 
 // Add auth middleware
-router.use(auth);
+// router.use(auth);
 
 // Validation middleware
 const validateImageUpload = (req, res, next) => {

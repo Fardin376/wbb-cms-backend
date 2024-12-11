@@ -2,16 +2,16 @@ const express = require('express');
 const Post = require('../models/posts.model'); // Adjust the path to your Post model
 const Page = require('../models/page.model');
 const router = express.Router();
-const auth = require('../middleware/auth');
-const isAdminPosts = require('../middleware/isAdmin');
+// const auth = require('../middleware/auth');
+const isAdmin = require('../middleware/isAdmin');
 const mongoose = require('mongoose');
 const Gallery = require('../models/gallery.model');
 const rateLimit = require('express-rate-limit');
 const Pdf = require('../models/pdf.model');
 
 // Apply auth middleware first, then role-based middleware
-router.use(auth);
-router.use(isAdminPosts);
+// router.use(auth);
+router.use(isAdmin);
 
 // Add rate limiting middleware
 const createPostLimiter = rateLimit({

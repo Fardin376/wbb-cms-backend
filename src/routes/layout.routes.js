@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const Layout = require('../models/layout.model');
-const auth = require('../middleware/auth');
+// const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/isAdmin');
 
 // Apply auth middleware
-router.use(auth);
+// router.use(auth);
 router.use(isAdmin);
 
 // Get all layouts
