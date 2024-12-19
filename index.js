@@ -16,23 +16,25 @@ const publicRoutes = require('./src/routes/public.routes');
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 'loopback'); // Trust only the loopback proxy (localhost)
+
 const port = process.env.PORT || 5000;
 
 // Basic middleware
 app.use(cookieParser());
 app.use(corsMiddleware);
 
-app.use((req, res, next) => {
-  res.cookie = res.cookie.bind(res);
-  const originalCookie = res.cookie;
-  res.cookie = function (name, value, options = {}) {
-    return originalCookie.call(this, name, value, {
-      ...cookieSettings,
-      ...options,
-    });
-  };
-  next();
-});
+// app.use((req, res, next) => {
+//   res.cookie = res.cookie.bind(res);
+//   const originalCookie = res.cookie;
+//   res.cookie = function (name, value, options = {}) {
+//     return originalCookie.call(this, name, value, {
+//       ...cookieSettings,
+//       ...options,
+//     });
+//   };
+//   next();
+// });
 
 app.use(express.json({ limit: '50mb' }));
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -45,21 +47,25 @@ app.use(
 );
 
 // Static files
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, 'public/uploads')),
+  require('./src/routes/page.routes')
+);
 
-// Rate limiter
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'development' ? 1000 : 100,
-  message: { error: 'Too many requests from this IP, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) =>
-    process.env.NODE_ENV === 'development' ||
-    req.path.startsWith('/api/public'),
-});
+// // Rate limiter
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: process.env.NODE_ENV === 'development' ? 1000 : 100,
+//   message: { error: 'Too many requests from this IP, please try again later.' },
+//   standardHeaders: true,
+//   legacyHeaders: false,
+//   skip: (req) =>
+//     process.env.NODE_ENV === 'development' ||
+//     req.path.startsWith('/api/public'),
+// });
 
-app.use(limiter);
+// app.use(limiter);
 
 // Initialize CSRF protection with updated configuration
 // const csrfMiddleware = csrf({
@@ -127,14 +133,12 @@ app.use(
 app.use('/api/menu', require('./src/routes/menu.routes'));
 app.use('/api/pages', require('./src/routes/page.routes'));
 app.use('/api/layouts', require('./src/routes/layout.routes'));
-app.use(
-  '/api/categories',
-
-  require('./src/routes/category.routes')
-);
+app.use('/api/categories', require('./src/routes/category.routes'));
 app.use('/api/posts', require('./src/routes/posts.routes'));
 app.use('/api/gallery', require('./src/routes/gallery.routes'));
+app.use('/api/banners', require('./src/routes/banner.routes'));
 app.use('/api/pdfs', require('./src/routes/pdf.routes'));
+app.use('/api/links', require('./src/routes/footer.routes'));
 
 // Error handler for CSRF
 app.use((err, req, res, next) => {

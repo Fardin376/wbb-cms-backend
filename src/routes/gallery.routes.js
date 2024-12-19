@@ -1,11 +1,13 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const Gallery = require('../models/gallery.model');
+const verifyTokenMiddleware = require('../middleware/tokenVerification');
+const authMiddleware = require('../middleware/auth');
 const router = express.Router();
-// const auth = require('../middleware/auth');
 
 // Add auth middleware
-// router.use(auth);
+router.use(verifyTokenMiddleware);
+router.use(authMiddleware);
 
 // Validation middleware
 const validateImageUpload = (req, res, next) => {
@@ -14,21 +16,27 @@ const validateImageUpload = (req, res, next) => {
   if (!url || !fileName || !uploadedBy) {
     return res.status(400).json({
       success: false,
-      message: 'Missing required fields'
+      message: 'Missing required fields',
     });
   }
 
-  if (usageTypes.isPost && !mongoose.Types.ObjectId.isValid(usageTypes.postId)) {
+  if (
+    usageTypes.isPost &&
+    !mongoose.Types.ObjectId.isValid(usageTypes.postId)
+  ) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid post ID'
+      message: 'Invalid post ID',
     });
   }
 
-  if (usageTypes.isPage && !mongoose.Types.ObjectId.isValid(usageTypes.pageId)) {
+  if (
+    usageTypes.isPage &&
+    !mongoose.Types.ObjectId.isValid(usageTypes.pageId)
+  ) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid page ID'
+      message: 'Invalid page ID',
     });
   }
 
@@ -43,18 +51,18 @@ router.post('/upload', validateImageUpload, async (req, res) => {
       url,
       fileName,
       usageTypes,
-      uploadedBy,
+      uploadedBy: req.user.userId,
     });
 
     res.status(201).json({
       success: true,
-      image: newImage
+      image: newImage,
     });
   } catch (error) {
     console.error('Error uploading image:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Image upload failed'
+      message: error.message || 'Image upload failed',
     });
   }
 });
@@ -67,8 +75,8 @@ router.get('/images', async (req, res) => {
         select: 'title.en isActive',
         populate: {
           path: 'category',
-          select: 'name.en'
-        }
+          select: 'name.en',
+        },
       })
       .populate('uploadedBy', 'username role')
       .sort({ createdAt: -1 });
@@ -76,13 +84,13 @@ router.get('/images', async (req, res) => {
     res.status(200).json({
       success: true,
       count: images.length,
-      images
+      images,
     });
   } catch (error) {
     console.error('Error fetching images:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to fetch images'
+      message: error.message || 'Failed to fetch images',
     });
   }
 });
@@ -92,12 +100,9 @@ router.delete('/cleanup', async (req, res) => {
   try {
     const Post = mongoose.model('Post');
     const Page = mongoose.model('Page');
-    
+
     const orphanedImages = await Gallery.find({
-      $or: [
-        { 'usageTypes.isPost': true },
-        { 'usageTypes.isPage': true }
-      ]
+      $or: [{ 'usageTypes.isPost': true }, { 'usageTypes.isPage': true }],
     });
 
     for (const image of orphanedImages) {
@@ -117,13 +122,13 @@ router.delete('/cleanup', async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Orphaned images cleaned up successfully'
+      message: 'Orphaned images cleaned up successfully',
     });
   } catch (error) {
     console.error('Error cleaning up orphaned images:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to clean up orphaned images'
+      message: error.message || 'Failed to clean up orphaned images',
     });
   }
 });
@@ -135,18 +140,18 @@ router.delete('/image/:id', async (req, res) => {
     if (!image) {
       return res.status(404).json({
         success: false,
-        message: 'Image not found'
+        message: 'Image not found',
       });
     }
     res.status(200).json({
       success: true,
-      message: 'Image deleted successfully'
+      message: 'Image deleted successfully',
     });
   } catch (error) {
     console.error('Error deleting image:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to delete image'
+      message: error.message || 'Failed to delete image',
     });
   }
 });

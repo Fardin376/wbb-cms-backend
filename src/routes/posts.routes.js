@@ -3,15 +3,13 @@ const Post = require('../models/posts.model'); // Adjust the path to your Post m
 const Page = require('../models/page.model');
 const router = express.Router();
 // const auth = require('../middleware/auth');
-const isAdmin = require('../middleware/isAdmin');
+// const isAdmin = require('../middleware/isAdmin');
 const mongoose = require('mongoose');
 const Gallery = require('../models/gallery.model');
 const rateLimit = require('express-rate-limit');
 const Pdf = require('../models/pdf.model');
-
-// Apply auth middleware first, then role-based middleware
-// router.use(auth);
-router.use(isAdmin);
+const verifyTokenMiddleware = require('../middleware/tokenVerification');
+const authMiddleware = require('../middleware/auth');
 
 // Add rate limiting middleware
 const createPostLimiter = rateLimit({
@@ -19,13 +17,18 @@ const createPostLimiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
 });
 
+// Add auth middleware
+router.use(verifyTokenMiddleware);
+router.use(authMiddleware);
+
 // Create a new post
 router.post('/create', createPostLimiter, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { title, content, pages, category, createdBy } = req.body;
+    const { title, content, pages, category } = req.body;
+    // const userId = req.user.userId;
 
     // Validate required fields
     if (
@@ -34,8 +37,7 @@ router.post('/create', createPostLimiter, async (req, res) => {
       !content?.en ||
       !content?.bn ||
       !pages?.length ||
-      !category ||
-      !createdBy
+      !category
     ) {
       return res.status(400).json({
         success: false,
@@ -51,16 +53,12 @@ router.post('/create', createPostLimiter, async (req, res) => {
               : null,
           pages: !pages?.length ? 'At least one page is required' : null,
           category: !category ? 'Category is required' : null,
-          createdBy: !createdBy ? 'Creator ID is required' : null,
         },
       });
     }
 
     // Validate ObjectIds
-    if (
-      !mongoose.Types.ObjectId.isValid(category) ||
-      !mongoose.Types.ObjectId.isValid(createdBy)
-    ) {
+    if (!mongoose.Types.ObjectId.isValid(category)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid ID format for category or creator',
@@ -75,7 +73,7 @@ router.post('/create', createPostLimiter, async (req, res) => {
       content,
       pages: pagesArray,
       category,
-      createdBy,
+      createdBy: req.user.userId,
       isActive: true,
       slug: `${title.en
         .toLowerCase()
@@ -451,40 +449,44 @@ router.get('/by-page/:pageId', async (req, res) => {
 });
 
 // Toggle featured status
-router.patch('/toggle-featured/:id', auth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { isFeatured } = req.body;
+router.patch(
+  '/toggle-featured/:id',
+  verifyTokenMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { isFeatured } = req.body;
 
-    const post = await Post.findByIdAndUpdate(
-      id,
-      {
-        isFeatured,
-        updatedAt: Date.now(),
-      },
-      { new: true }
-    );
+      const post = await Post.findByIdAndUpdate(
+        id,
+        {
+          isFeatured,
+          updatedAt: Date.now(),
+        },
+        { new: true }
+      );
 
-    if (!post) {
-      return res.status(404).json({
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: 'Post not found',
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Featured status updated successfully',
+        post,
+      });
+    } catch (error) {
+      console.error('Error updating featured status:', error);
+      res.status(500).json({
         success: false,
-        message: 'Post not found',
+        message: 'Error updating featured status',
       });
     }
-
-    res.json({
-      success: true,
-      message: 'Featured status updated successfully',
-      post,
-    });
-  } catch (error) {
-    console.error('Error updating featured status:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating featured status',
-    });
   }
-});
+);
 
 // Update the public featured posts route
 router.get('/public/featured', async (req, res) => {

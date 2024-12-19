@@ -6,19 +6,20 @@ const Menu = require('../models/menu.model');
 const Post = require('../models/posts.model');
 const Gallery = require('../models/gallery.model');
 const Pdf = require('../models/pdf.model');
+const FooterLink = require('../models/footerLinks.model');
 const mongoose = require('mongoose');
-const rateLimit = require('express-rate-limit');
+// const rateLimit = require('express-rate-limit');
 
 // Apply CORS specifically for public routes
 router.use(corsMiddleware);
 
-// Add rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-});
+// // Add rate limiting
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // limit each IP to 100 requests per windowMs
+// });
 
-router.use(limiter);
+// router.use(limiter);
 
 // Add cache control middleware
 const cacheControl = (duration) => (req, res, next) => {
@@ -348,10 +349,6 @@ router.get('/posts', cacheControl(300), async (req, res) => {
 
 // Update the PDF fetching helper function
 const fetchPDFsForPost = async (postId, categoryType) => {
-  if (!['research', 'publications'].includes(categoryType)) {
-    return [];
-  }
-
   try {
     // First try to find PDFs directly linked to the post
     let pdfs = await Pdf.find({
@@ -528,6 +525,21 @@ router.get('/debug/pdfs/:postId', async (req, res) => {
       success: false,
       error: error.message,
     });
+  }
+});
+
+router.get('/all-footer-links', async (req, res) => {
+  try {
+    const footerLinks = await FooterLink.find().sort({
+      serial: 1,
+    }); // Sort by serial for ordering
+    res.status(201).json({
+      success: true,
+      message: 'Footer link fetched successfully',
+      footers: footerLinks,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching footer links', error });
   }
 });
 

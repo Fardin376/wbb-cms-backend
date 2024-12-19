@@ -1,17 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const Layout = require('../models/layout.model');
-// const auth = require('../middleware/auth');
-const isAdmin = require('../middleware/isAdmin');
+const verifyTokenMiddleware = require('../middleware/tokenVerification');
+const authMiddleware = require('../middleware/auth');
 
-// Apply auth middleware
-// router.use(auth);
-router.use(isAdmin);
+// Add auth middleware
+router.use(verifyTokenMiddleware);
+router.use(authMiddleware);
 
 // Get all layouts
 router.get('/all-layouts', async (req, res) => {
   try {
-    const layouts = await Layout.find().sort({ createdAt: -1 });
+    const layouts = await Layout.find()
+      .sort({ createdAt: -1 })
+      .populate('createdBy');
 
     res.status(200).json({
       success: true,
@@ -31,6 +33,7 @@ router.get('/all-layouts', async (req, res) => {
 router.post('/create', async (req, res) => {
   try {
     const { name, identifier, content } = req.body;
+    const userId = req.user?.userId; 
 
     // Validate required fields
     if (!name || !identifier || !content) {
@@ -40,11 +43,18 @@ router.post('/create', async (req, res) => {
       });
     }
 
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: User ID is required',
+      });
+    }
+
     const layout = await Layout.create({
       name,
       identifier,
       content,
-      createdBy: req.user._id,
+      createdBy: userId, 
     });
 
     res.status(201).json({
@@ -59,6 +69,7 @@ router.post('/create', async (req, res) => {
     });
   }
 });
+
 
 // Update layout
 router.put('/update/:id', async (req, res) => {

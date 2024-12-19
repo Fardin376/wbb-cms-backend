@@ -20,12 +20,14 @@ const verifyTokenMiddleware = (req, res, next) => {
     }
 
     req.user = { userId: decoded.userId, role: decoded.role };
+    console.log(req.user)
+    
     next();
   } catch (error) {
     console.error('Token verification error:', error.message);
 
     res.clearCookie('token', {
-      httpOnly: true,
+      httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     });

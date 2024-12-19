@@ -3,11 +3,13 @@ const Category = require('../models/category.model'); // Adjust the path to the 
 const router = express.Router();
 const mongoose = require('mongoose');
 const xss = require('xss');
-// const auth = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
+const authMiddleware = require('../middleware/auth');
+const verifyTokenMiddleware = require('../middleware/tokenVerification');
 
 // Add auth middleware
-// router.use(auth);
+router.use(verifyTokenMiddleware)
+router.use(authMiddleware);
 
 // Add validation middleware
 const validateCategory = async (req, res, next) => {
