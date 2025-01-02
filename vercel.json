@@ -18,8 +18,5 @@
         "Access-Control-Allow-Credentials": "true"
       }
     }
-  ],
-  "env": {
-    "DATABASE_URL": "postgresql://postgres:1708admin@localhost:5000/wbb_db?schema=public"
-  }
+  ]
 }
