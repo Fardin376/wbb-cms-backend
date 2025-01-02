@@ -1,17 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { corsMiddleware } = require('../middleware/cors');
-const Page = require('../models/page.model');
-const Menu = require('../models/menu.model');
-const Post = require('../models/posts.model');
-const Gallery = require('../models/gallery.model');
-const Pdf = require('../models/pdf.model');
-const FooterLink = require('../models/footerLinks.model');
-const mongoose = require('mongoose');
-// const rateLimit = require('express-rate-limit');
+const prisma = require('../services/db.service');
+const cors = require('../middleware/cors');
+const rateLimit = require('express-rate-limit');
+const stream = require('stream');
 
 // Apply CORS specifically for public routes
-router.use(corsMiddleware);
+router.use(cors);
 
 // // Add rate limiting
 // const limiter = rateLimit({
@@ -27,519 +22,448 @@ const cacheControl = (duration) => (req, res, next) => {
   next();
 };
 
-// Get all public pages
-router.get('/pages', async (req, res) => {
-  try {
-    const pages = await Page.find({
-      isActive: true,
-      status: 'published',
-    })
-      .select('name slug template layout')
-      .populate('layout')
-      .lean();
-
-    // Transform pages before sending
-    const transformedPages = pages.map((page) => ({
-      ...page,
-      template: {
-        en: page.template?.en || null,
-        bn: page.template?.bn || null,
-      },
-    }));
-
-    console.log(
-      'Sending pages:',
-      transformedPages.map((p) => ({
-        id: p._id,
-        name: p.name,
-        slug: p.slug,
-        hasTemplate: !!p.template,
-      }))
-    );
-
-    res.status(200).json({
-      success: true,
-      pages: transformedPages,
-    });
-  } catch (error) {
-    console.error('Error fetching public pages:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching pages',
-    });
-  }
-});
-
-// Get public page by slug
-router.get('/pages/:slug(*)', async (req, res) => {
-  try {
-    const normalizedSlug = req.params.slug
-      .replace(/^\/+|\/+$/g, '') // Remove leading/trailing slashes
-      .replace(/\/+/g, '/'); // Replace multiple slashes with single slash
-
-    console.log('Looking for page with normalized slug:', normalizedSlug);
-
-    // Find the page with various slug formats
-    let page = await Page.findOne({
-      $or: [
-        { slug: normalizedSlug },
-        { slug: `/${normalizedSlug}` },
-        { slug: `${normalizedSlug}/` },
-        { slug: { $regex: new RegExp(`^/?${normalizedSlug}/?$`) } },
-      ],
-      isActive: true,
-      status: 'published',
-    })
-      .populate('layout')
-      .lean();
-
-    if (!page) {
-      console.log('No page found for slug:', normalizedSlug);
-      return res.status(404).json({
-        success: false,
-        message: 'Page not found',
-        slug: normalizedSlug,
-      });
-    }
-
-    // Transform the page data
-    const transformedPage = {
-      ...page,
-      slug: page.slug.replace(/^\/+|\/+$/g, ''),
-      template: {
-        en: page.template?.en || null,
-        bn: page.template?.bn || null,
-      },
-      hasTemplate: !!page.template,
-      layout: page.layout || null,
-    };
-
-    res.json({
-      success: true,
-      page: transformedPage,
-    });
-  } catch (error) {
-    console.error('Error fetching page:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching page',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
-    });
-  }
-});
-
-// Get public menu items with page validation
+// GET route for fetching menus
 router.get('/menu', async (req, res) => {
   try {
-    const [menuItems, pages] = await Promise.all([
-      Menu.find({
-        isActive: true,
-        parentId: null,
-      })
-        .sort({ order: 1 })
-        .lean(),
-      Page.find({
-        isActive: true,
-        status: 'published',
-      })
-        .select('slug')
-        .lean(),
-    ]);
+    // Fetch menus from the database
+    const menus = await prisma.menu.findMany({
+      where: { isActive: true }, // Fetch only active menus
+    });
 
-    // Create a set of valid page slugs for quick lookup
-    const validSlugs = new Set(pages.map((page) => page.slug));
-
-    // Function to validate and process menu items recursively
-    const processMenuItems = (items) => {
-      return items.map((item) => ({
-        ...item,
-        // Set href to '/' if the slug doesn't match any page
-        href: validSlugs.has(item.slug) ? `/pages/${item.slug}` : '/',
-        // Add isExternal flag for external links
-        isExternal: item.href?.startsWith('http') || false,
-      }));
-    };
-
-    // Function to get children recursively
-    const getChildren = async (parentId) => {
-      const children = await Menu.find({
-        isActive: true,
-        parentId,
-      })
-        .sort({ order: 1 })
-        .lean();
-
-      const processedChildren = processMenuItems(children);
-
-      for (let child of processedChildren) {
-        child.children = await getChildren(child._id);
-      }
-
-      return processedChildren;
-    };
-
-    // Process root menu items
-    const processedMenuItems = processMenuItems(menuItems);
-
-    // Get children for each root menu
-    for (let menu of processedMenuItems) {
-      menu.children = await getChildren(menu._id);
+    // If no menus found, return an empty array
+    if (!menus.length) {
+      return res.status(200).json({ success: true, menus: [] });
     }
 
-    res.status(200).json({
+    // Respond with the menus
+    return res.status(200).json({
       success: true,
-      menus: processedMenuItems,
+      menus: menus.map((menu) => ({
+        id: menu.id,
+        serial: menu.serial,
+        titleEn: menu.titleEn,
+        titleBn: menu.titleBn,
+        slug: menu.slug,
+        parentId: menu.parentId,
+        isExternalLink: menu.isExternalLink,
+        url: menu.url,
+        order: menu.order,
+        isActive: menu.isActive,
+        createdAt: menu.createdAt,
+        updatedAt: menu.updatedAt,
+      })),
     });
   } catch (error) {
-    console.error('Error fetching public menu items:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching menu items',
-    });
+    console.error('Error fetching menus:', error);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Failed to fetch menus' });
   }
 });
 
-// Get all posts route
-router.get('/posts', cacheControl(300), async (req, res) => {
+//Get post categories
+router.get('/categories', async (req, res) => {
   try {
-    const { featured } = req.query;
-    const query = {
-      isActive: true,
-      ...(featured === 'true' && { isFeatured: true }),
+    const categories = await prisma.category.findMany({});
+
+    // Mapping categories to include type checks for research, articles, and notices
+    const CATEGORY_MAPPING = {
+      research: ['research', 'publications'],
+      articles: ['articles', 'news'],
+      notices: ['other'],
     };
 
-    // 1. Fetch all posts
-    const posts = await Post.find(query)
-      .populate({
-        path: 'category',
-        select: '_id name type',
-      })
-      .populate('pages', 'name slug')
-      .select('title slug category content isFeatured createdAt pages')
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // 2. Get all post IDs
-    const postIds = posts.map((post) => post._id);
-
-    // 3. Fetch all images and PDFs in parallel
-    const [allImages, allPdfs] = await Promise.all([
-      Gallery.find({
-        'usageTypes.postId': { $in: postIds },
-        status: 'active',
-      })
-        .select('url fileName usageTypes')
-        .lean(),
-
-      // Fetch PDFs with both post and category references
-      Pdf.find({
-        $or: [
-          { 'usageTypes.postId': { $in: postIds } },
-          {
-            'usageTypes.categoryId': { $in: postIds },
-            $or: [
-              { 'usageTypes.isResearch': true },
-              { 'usageTypes.isPublications': true },
-            ],
-          },
-        ],
-        status: 'active',
-      })
-        .select('_id fileName fileId fileSize mimeType usageTypes')
-        .lean(),
-    ]);
-
-    console.log('Found PDFs:', allPdfs.length);
-
-    // 4. Organize assets by post ID
-    const imagesByPostId = {};
-    const pdfsByPostId = {};
-
-    // Organize images
-    allImages.forEach((img) => {
-      const postId = img.usageTypes.postId.toString();
-      if (!imagesByPostId[postId]) {
-        imagesByPostId[postId] = [];
-      }
-      imagesByPostId[postId].push(img);
-    });
-
-    // Organize PDFs by both post ID and category ID
-    allPdfs.forEach((pdf) => {
-      let postId = pdf.usageTypes.postId?.toString();
-      const categoryId = pdf.usageTypes.categoryId?.toString();
-
-      if (postId) {
-        if (!pdfsByPostId[postId]) {
-          pdfsByPostId[postId] = [];
-        }
-        pdfsByPostId[postId].push(pdf);
-      }
-
-      if (categoryId) {
-        if (!pdfsByPostId[categoryId]) {
-          pdfsByPostId[categoryId] = [];
-        }
-        pdfsByPostId[categoryId].push(pdf);
-      }
-    });
-
-    // 5. Transform posts with their assets
-    const transformedPosts = posts.map((post) => {
-      const postId = post._id.toString();
-      const postImages = imagesByPostId[postId] || [];
-      const postPdfs = pdfsByPostId[postId] || [];
-
-      const isResearchOrPublication =
-        post.category?.type === 'research' ||
-        post.category?.type === 'publications';
+    const mappedCategories = categories.map((category) => {
+      const type = category.type?.toLowerCase();
 
       return {
-        ...post,
-        coverImg:
-          postImages.find((img) => img.usageTypes.isCover)?.url ||
-          postImages[0]?.url ||
-          null,
-        galleryImages: postImages
-          .filter((img) => !img.usageTypes.isCover)
-          .map((img) => ({
-            imageUrl: img.url,
-            caption: img.fileName,
-          })),
-        pdfs: isResearchOrPublication
-          ? postPdfs.map((pdf) => ({
-              id: pdf._id,
-              fileName: pdf.fileName,
-              url: `/api/public/download/pdf/${pdf._id}`,
-              title: pdf.fileName,
-              fileSize: pdf.fileSize,
-              mimeType: pdf.mimeType,
-            }))
-          : [],
+        id: category.id,
+        nameEn: category.nameEn,
+        nameBn: category.nameBn,
+        type: category.type,
+        isResearchOrPublication: CATEGORY_MAPPING.research.includes(type),
+        isArticleOrNews: CATEGORY_MAPPING.articles.includes(type),
+        isNotice: CATEGORY_MAPPING.notices.includes(type),
       };
     });
 
-    // Add debug logging
-    transformedPosts.forEach((post) => {
-      if (
-        post.category?.type === 'publications' ||
-        post.category?.type === 'research'
-      ) {
-        console.log(`Post ${post._id} (${post.category.type}):`, {
-          title: post.title.en,
-          pdfCount: post.pdfs.length,
-          pdfs: post.pdfs,
-        });
-      }
-    });
-
-    res.json({
+    res.status(200).json({
       success: true,
-      posts: transformedPosts,
+      categories: mappedCategories,
     });
   } catch (error) {
-    console.error('Error fetching posts:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching posts',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      message: 'An error occurred while fetching categories',
     });
   }
 });
 
-// Update the PDF fetching helper function
-const fetchPDFsForPost = async (postId, categoryType) => {
+// GET route for fetching posts
+router.get('/posts/details', async (req, res) => {
   try {
-    // First try to find PDFs directly linked to the post
-    let pdfs = await Pdf.find({
-      'usageTypes.postId': postId,
-      status: 'active',
-    })
-      .select('_id fileName fileId fileSize mimeType usageTypes')
-      .lean();
+    // Query parameters for filtering
+    const { categoryId, type } = req.query;
 
-    // If no PDFs found, try to find PDFs by category
-    if (!pdfs.length) {
-      pdfs = await Pdf.find({
-        'usageTypes.categoryId': postId,
-        [`usageTypes.is${categoryType}`]: true,
-        status: 'active',
-      })
-        .select('_id fileName fileId fileSize mimeType usageTypes')
-        .lean();
+    const posts = await prisma.post.findMany({
+      where: {
+        status: 'PUBLISHED',
+        ...(categoryId && { categoryId: parseInt(categoryId, 10) }),
+      },
+      include: {
+        pages: true,
+        category: true,
+        pdfs: true,
+        createdBy: {
+          select: { role: true },
+        },
+      },
+    });
+
+    if (!posts.length) {
+      return res.status(200).json({ success: true, posts: [] });
     }
 
-    console.log(
-      `Found ${pdfs.length} PDFs for post ${postId}, category: ${categoryType}`
-    );
-    return pdfs;
-  } catch (error) {
-    console.error('Error fetching PDFs:', error);
-    return [];
-  }
-};
-
-// Update the single post route
-router.get('/posts/:slug', cacheControl(300), async (req, res) => {
-  try {
-    if (!req.params.slug) {
-      return res.status(400).json({
-        success: false,
-        message: 'Slug parameter is required',
-      });
-    }
-
-    // 1. Find the post
-    const post = await Post.findOne({
-      slug: req.params.slug,
-      isActive: true,
-    })
-      .populate({
-        path: 'category',
-        select: '_id name type',
-      })
-      .populate('pages', 'name slug')
-      .select('title slug category content createdAt pages isFeatured')
-      .lean();
-
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: 'Post not found or inactive',
-      });
-    }
-
-    // 2. Fetch images and PDFs in parallel
-    const [images, pdfs] = await Promise.all([
-      Gallery.find({
-        'usageTypes.postId': post._id,
-        status: 'active',
-      })
-        .select('url fileName usageTypes')
-        .lean(),
-      fetchPDFsForPost(post._id, post.category?.type),
-    ]);
-
-    console.log('Post category type:', post.category?.type);
-    console.log('Found PDFs:', pdfs);
-
-    // 3. Transform the post with its assets
-    const transformedPost = {
-      ...post,
-      coverImg:
-        images.find((img) => img.usageTypes.isCover)?.url ||
-        images[0]?.url ||
-        null,
-      galleryImages: images
-        .filter((img) => !img.usageTypes.isCover)
-        .map((img) => ({
-          imageUrl: img.url,
-          caption: img.fileName,
-        })),
-      pdfs: pdfs.map((pdf) => ({
-        id: pdf._id,
-        fileName: pdf.fileName,
-        url: `/api/public/download/pdf/${pdf._id}`,
-        title: pdf.fileName, // Use fileName as title since title isn't in the schema
-        fileSize: pdf.fileSize,
-        mimeType: pdf.mimeType,
-      })),
+    // Filter posts by type (e.g., research, news, articles, etc.)
+    const CATEGORY_MAPPING = {
+      research: ['research', 'publications'],
+      articles: ['articles', 'news'],
+      notices: ['other'],
     };
 
-    console.log('Transformed PDFs:', transformedPost.pdfs);
+    const filteredPosts = posts.filter((post) => {
+      const categoryType = post.categoryId?.type?.toLowerCase();
+      if (!type) return true; // No filter, return all posts
+      return CATEGORY_MAPPING[type]?.includes(categoryType);
+    });
 
-    res.json({
+    const response = filteredPosts.map((post) => ({
+      id: post.id,
+      titleEn: post.titleEn,
+      titleBn: post.titleBn,
+      contentEn: post.contentEn,
+      contentBn: post.contentBn,
+      coverImage: post.coverImage,
+      slug: post.slug,
+      status: post.status,
+      isFeatured: post.isFeatured,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+      userId: post.createdBy,
+      categoryId: post.categoryId,
+      pdfs: post.pdfs.map((pdf) => ({
+        id: pdf.id,
+        name: pdf.fileName,
+        createdAt: pdf.createdAt,
+        updatedAt: pdf.updatedAt,
+      })),
+      pages: post.pages.map((page) => ({
+        id: page.id,
+        name: page.name,
+        titleEn: page.titleEn,
+        titleBn: page.titleBn,
+        slug: page.slug,
+        templateEn: page.templateEn,
+        templateBn: page.templateBn,
+        metadata: {
+          updatedAt: page.updatedAt,
+          lastModifiedBy: page.lastModifiedBy,
+        },
+        status: page.status,
+        createdAt: page.createdAt,
+        updatedAt: page.updatedAt,
+        createdById: page.createdById,
+        layoutId: page.layoutId,
+      })),
+      category: {
+        id: post.category.id,
+        nameEn: post.category.nameEn,
+        nameBn: post.category.nameBn,
+        type: post.category.type,
+        userId: post.category.userId,
+        isActive: post.category.isActive,
+        createdAt: post.category.createdAt,
+        updatedAt: post.category.updatedAt,
+      },
+      createdBy: {
+        role: post.createdBy.role,
+      },
+    }));
+
+    res.status(200).json({ success: true, posts: response });
+  } catch (error) {
+    console.error('Error fetching posts:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch posts' });
+  }
+});
+
+router.get('/posts/:slug', async (req, res) => {
+  const slug = req.params.slug;
+  // Fetch the post by slug from the database
+  const post = await prisma.post.findUnique({
+    where: { slug },
+    include: { pdfs: true, category: true },
+  });
+  if (!post) {
+    return res.status(404).send('Post not found');
+  }
+  res.status(200).json({
+    success: true,
+    post: post,
+  });
+});
+
+// Get all public pages
+router.get('/pages', async (req, res) => {
+  try {
+    // Fetch pages from the database
+    const pages = await prisma.page.findMany({
+      where: {
+        status: 'PUBLISHED', // Fetch only published pages
+      },
+    });
+
+    // If no pages found, return an empty array
+    if (!pages.length) {
+      return res.status(200).json({ success: true, pages: [] });
+    }
+
+    // Respond with transformed pages
+    return res.status(200).json({
       success: true,
-      post: transformedPost,
+      pages: pages.map((page) => ({
+        name: page.name,
+        titleEn: page.titleEn,
+        titleBn: page.titleBn,
+        slug: page.slug,
+        layout: page.layoutId,
+        template: {
+          en: page.templateEn || null,
+          bn: page.templateBn || null,
+        },
+      })),
     });
   } catch (error) {
-    console.error('Error fetching post:', error);
+    console.error('Error fetching pages:', error);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Failed to fetch pages' });
+  }
+});
+
+// GET route for fetching a public page by slug
+router.get('/pages/:slug(*)', async (req, res) => {
+  try {
+    // Fetch page by slug from the database
+    const page = await prisma.page.findUnique({
+      where: { slug: req.params.slug },
+      include: { layout: true }, // Include layout information
+    });
+
+    // If the page is not found, return a 404 error
+    if (!page) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Page not found' });
+    }
+
+    // Respond with the page details
+    return res.status(200).json({
+      success: true,
+      page: {
+        id: page.id,
+        name: page.name,
+        titleEn: page.titleEn,
+        titleBn: page.titleBn,
+        slug: page.slug,
+        layout: page.layout,
+        template: {
+          en: page.templateEn || null,
+          bn: page.templateBn || null,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching page by slug:', error);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Failed to fetch page' });
+  }
+});
+
+// GET route for fetching footer links
+router.get('/footer-links', async (req, res) => {
+  try {
+    // Fetch footer links from the database
+    const footerLinks = await prisma.footerLink.findMany({
+      where: { status: 'PUBLISHED' }, // Fetch only published footer links
+    });
+
+    // If no footer links found, return an empty array
+    if (!footerLinks.length) {
+      return res.status(200).json({ success: true, footerLinks: [] });
+    }
+
+    // Respond with the footer links
+    return res.status(200).json({
+      success: true,
+      footerLinks: footerLinks.map((link) => ({
+        id: link.id,
+        position: link.position,
+        nameEn: link.nameEn,
+        nameBn: link.nameBn,
+        url: link.url,
+        serial: link.serial,
+        status: link.status,
+        createdAt: link.createdAt,
+        updatedAt: link.updatedAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching footer links:', error);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Failed to fetch footer links' });
+  }
+});
+
+// GET route for fetching social links
+router.get('/social-links', async (req, res) => {
+  try {
+    // Fetch footer links from the database
+    const socialLinks = await prisma.socialLink.findMany({
+      where: { status: 'PUBLISHED' }, // Fetch only published footer links
+    });
+
+    // If no footer links found, return an empty array
+    if (!socialLinks.length) {
+      return res.status(200).json({ success: true, socialLinks: [] });
+    }
+
+    // Respond with the footer links
+    return res.status(200).json({
+      success: true,
+      socialLinks: socialLinks.map((link) => ({
+        id: link.id,
+        nameEn: link.nameEn,
+        nameBn: link.nameBn,
+        url: link.url,
+        status: link.status,
+        createdAt: link.createdAt,
+        updatedAt: link.updatedAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching footer links:', error);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Failed to fetch footer links' });
+  }
+});
+
+// GET route for fetching banners
+router.get('/banners', async (req, res) => {
+  try {
+    const banners = await prisma.banner.findMany({
+      include: {
+        uploadedBy: {
+          select: {
+            username: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      count: banners.length,
+      banners,
+    });
+  } catch (error) {
+    console.error('Error fetching banners:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      message: error.message || 'Failed to fetch banners',
     });
   }
 });
 
-// Update the PDF download route
+//Download PDF
 router.get('/download/pdf/:id', async (req, res) => {
   try {
-    const pdf = await Pdf.findById(req.params.id);
-    if (!pdf || pdf.status !== 'active') {
-      return res.status(404).json({ success: false, message: 'PDF not found' });
-    }
-
-    // Get GridFS bucket
-    const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
-      bucketName: 'pdfs',
+    const pdf = await prisma.pdf.findUnique({
+      where: { id: parseInt(req.params.id) },
     });
 
-    // Set proper headers for PDF download
-    res.setHeader('Content-Type', pdf.mimeType || 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(pdf.fileName)}"`
-    );
-
-    // Stream the file from GridFS to response
-    const downloadStream = bucket.openDownloadStream(pdf.fileId);
-
-    downloadStream.on('error', (error) => {
-      console.error('Error streaming PDF:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          success: false,
-          message: 'Error streaming PDF',
-        });
-      }
-    });
-
-    downloadStream.pipe(res);
-  } catch (error) {
-    console.error('Error downloading PDF:', error);
-    if (!res.headersSent) {
-      res.status(500).json({
+    if (!pdf || pdf.status === 'INACTIVE') {
+      return res.status(404).json({
         success: false,
-        message: 'Failed to download PDF',
+        message: 'PDF not found',
       });
     }
-  }
-});
 
-// Add this debug route temporarily
-router.get('/debug/pdfs/:postId', async (req, res) => {
-  try {
-    const pdfs = await Pdf.find({
-      'usageTypes.postId': req.params.postId,
-      status: 'active',
-    }).lean();
+    if (!pdf.fileData) {
+      return res.status(404).json({
+        success: false,
+        message: 'File content not found',
+      });
+    }
 
-    res.json({
-      success: true,
-      count: pdfs.length,
-      pdfs: pdfs,
-    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${pdf.fileName}"`
+    );
+
+    const downloadStream = new stream.PassThrough();
+    downloadStream.end(Buffer.from(pdf.fileData, 'base64'));
+    downloadStream.pipe(res);
   } catch (error) {
+    console.error('Download error:', error);
     res.status(500).json({
       success: false,
+      message: 'Download failed',
       error: error.message,
     });
   }
 });
 
-router.get('/all-footer-links', async (req, res) => {
+//GET route for gallery
+router.get('/images', async (req, res) => {
   try {
-    const footerLinks = await FooterLink.find().sort({
-      serial: 1,
-    }); // Sort by serial for ordering
-    res.status(201).json({
+    const images = await prisma.gallery.findMany({
+      where: {
+        isPost: false, // Filter images with isPost set to false
+      },
+      include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            username: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc', // Order images by createdAt in descending order
+      },
+    });
+
+    res.status(200).json({
       success: true,
-      message: 'Footer link fetched successfully',
-      footers: footerLinks,
+      count: images.length,
+      images,
     });
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching footer links', error });
+    console.error('Error fetching images:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch images',
+    });
   }
 });
 

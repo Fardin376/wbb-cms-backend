@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int        @id @default(autoincrement())
+  username      String     @unique
+  email         String     @unique
+  password      String
+  role          Role       @default(USER)
+  isActive      Boolean    @default(true)
+  emailVerified Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  lastLoginAt   DateTime?
+  posts         Post[]     @relation("CreatedPosts")
+  pages         Page[]     @relation("CreatedPages")
+  layouts       Layout[]   @relation("CreatedLayouts")
+  banners       Banner[]   @relation("UploadedBanners")
+  galleries     Gallery[]  @relation("UploadedGalleries")
+  categories    Category[] @relation("CreatedCategories")
+
+  @@map("users")
+}
+
+model Post {
+  id         Int      @id @default(autoincrement())
+  titleEn    String   @db.VarChar(500)
+  titleBn    String   @db.VarChar(500)
+  contentEn  String   @db.VarChar(500000)
+  contentBn  String   @db.VarChar(500000)
+  coverImage String?
+  slug       String   @unique
+  status     Status   @default(DRAFT)
+  isFeatured Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  createdBy  User     @relation("CreatedPosts", fields: [userId], references: [id])
+  userId     Int
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId Int
+  pages      Page[]
+  pdfs       Pdf[]
+
+  @@index([categoryId])
+  @@index([status, isFeatured])
+  @@index([status, categoryId])
+  @@index([slug])
+}
+
+model Page {
+  id          Int      @id @default(autoincrement())
+  name        String
+  titleEn     String
+  titleBn     String
+  slug        String   @unique
+  templateEn  Json?
+  templateBn  Json?
+  metadata    Json?
+  status      Status   @default(DRAFT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User     @relation("CreatedPages", fields: [createdById], references: [id])
+  createdById Int
+  layout      Layout?  @relation(fields: [layoutId], references: [id])
+  layoutId    Int?
+  posts       Post[]
+
+  @@index([createdById])
+  @@index([layoutId])
+  @@index([status])
+  @@index([slug])
+}
+
+model Layout {
+  id          Int      @id @default(autoincrement())
+  name        String
+  identifier  String   @unique
+  content     Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User     @relation("CreatedLayouts", fields: [createdById], references: [id])
+  createdById Int
+  pages       Page[]
+
+  @@index([createdById])
+}
+
+model Banner {
+  id            Int      @id @default(autoincrement())
+  fileName      String
+  url           String
+  status        Status   @default(UNPUBLISHED)
+  uploadedBy    User     @relation("UploadedBanners", fields: [userId], references: [id])
+  userId        Int
+  titleEn       String?
+  titleBn       String?
+  descriptionEn String?
+  descriptionBn String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+}
+
+model Gallery {
+  id         Int      @id @default(autoincrement())
+  url        String
+  fileName   String
+  fileType   String   @default("image")
+  isPost     Boolean  @default(false)
+  isCover    Boolean  @default(false)
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now())
+  uploadedBy User     @relation("UploadedGalleries", fields: [userId], references: [id])
+  userId     Int
+}
+
+model Category {
+  id        Int          @id @default(autoincrement())
+  nameEn    String       @unique @db.VarChar(100)
+  nameBn    String       @unique @db.VarChar(100)
+  type      CategoryType @default(OTHER)
+  createdBy User         @relation("CreatedCategories", fields: [userId], references: [id])
+  userId    Int
+  isActive  Boolean      @default(true)
+  posts     Post[]
+  pdfs      Pdf[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model FooterLink {
+  id        Int      @id @default(autoincrement())
+  position  Position
+  nameEn    String
+  nameBn    String
+  url       String
+  serial    Int
+  status    Status   @default(UNPUBLISHED)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+}
+
+model SocialLink {
+  id        Int      @id @default(autoincrement())
+  nameEn    String
+  nameBn    String
+  url       String
+  status    Status   @default(UNPUBLISHED)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+}
+
+model Pdf {
+  id            Int       @id @default(autoincrement())
+  fileName      String
+  fileId        String    @unique
+  fileSize      Int?
+  fileData      String?
+  mimeType      String?
+  isPublication Boolean   @default(false)
+  isResearch    Boolean   @default(false)
+  post          Post?     @relation(fields: [postId], references: [id])
+  postId        Int?
+  category      Category? @relation(fields: [categoryId], references: [id])
+  categoryId    Int?
+  status        Status    @default(ACTIVE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now())
+
+  @@map("pdfs")
+}
+
+model Menu {
+  id             Int      @id @default(autoincrement())
+  serial         Int      @unique @default(autoincrement())
+  titleEn        String   @unique
+  titleBn        String   @unique
+  slug           String   @unique
+  parentId       Int?
+  parent         Menu?    @relation("MenuHierarchy", fields: [parentId], references: [id])
+  children       Menu[]   @relation("MenuHierarchy")
+  isExternalLink Boolean  @default(false)
+  url            String?
+  order          Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now())
+
+  @@index([parentId])
+  @@index([isActive])
+  @@index([order])
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  EDITOR
+  USER
+}
+
+enum Status {
+  DRAFT
+  PUBLISHED
+  UNPUBLISHED
+  ARCHIVED
+  ACTIVE
+  INACTIVE
+}
+
+enum Position {
+  LEFT
+  CENTER
+}
+
+enum CategoryType {
+  NEWS
+  ARTICLES
+  RESEARCH
+  PUBLICATIONS
+  OTHER
+}

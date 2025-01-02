@@ -1,26 +1,25 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const multer = require('multer');
-const { GridFSBucket } = require('mongodb');
-const Pdf = require('../models/pdf.model');
+const { PrismaClient } = require('@prisma/client');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const stream = require('stream');
 const authMiddleware = require('../middleware/auth');
-const verifyTokenMiddleware = require('../middleware/tokenVerification');
+const { v4: uuidv4 } = require('uuid');
 
-// Rate limiting
+// Initialize Prisma
+const prisma = new PrismaClient();
+
+// Rate limiting configuration
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
 });
 
 // Protected routes
-// Add auth middleware
-router.use(verifyTokenMiddleware);
 router.use(authMiddleware);
 
-// Configure multer for memory storage
+// Multer configuration
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -42,7 +41,6 @@ router.post(
   uploadLimiter,
   upload.single('pdfFile'),
   async (req, res) => {
-    let bucket;
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -51,59 +49,49 @@ router.post(
         });
       }
 
-      const metadata = JSON.parse(req.body.metadata);
+      const metadata = JSON.parse(req.body.metadata || '{}');
+      const { postId, categoryId, isPublication, isResearch } = metadata;
 
-      // Create GridFS bucket
-      bucket = new GridFSBucket(mongoose.connection.db, {
-        bucketName: 'pdfs',
-      });
+      console.log('Post ID:', postId); // Debugging
+      console.log('Category ID:', categoryId); // Debugging
 
-      // Create upload stream
-      const uploadStream = bucket.openUploadStream(req.file.originalname, {
-        contentType: 'application/pdf',
-        metadata: {
-          uploadedBy: req.user.userId.toString(),
-          originalName: req.file.originalname,
-        },
-      });
+      const fileData = req.file.buffer.toString('base64');
 
-      // Create readable stream from buffer
-      const bufferStream = new stream.PassThrough();
-      bufferStream.end(req.file.buffer);
+      // Generate a unique fileId
+      const fileId = uuidv4();
 
-      // Pipe buffer to GridFS
-      await new Promise((resolve, reject) => {
-        bufferStream
-          .pipe(uploadStream)
-          .on('error', reject)
-          .on('finish', resolve);
-      });
-
-      // Save reference to database
-      const newPdf = await Pdf.create({
-        fileId: uploadStream.id,
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        mimeType: 'application/pdf',
-        usageTypes: metadata.usageTypes,
-        metadata: {
-          uploadedBy: req.user.userId,
-          lastModifiedBy: req.user.userId,
+      // Save metadata in PostgreSQL
+      const newPdf = await prisma.pdf.create({
+        data: {
+          fileName: req.file.originalname,
+          fileId: fileId,
+          fileSize: req.file.size,
+          fileData: fileData,
+          mimeType: req.file.mimetype,
+          status: 'ACTIVE',
+          isPublication: Boolean(isPublication),
+          isResearch: Boolean(isResearch),
+          ...(postId && { post: { connect: { id: parseInt(postId) } } }),
+          ...(categoryId && {
+            category: { connect: { id: parseInt(categoryId) } },
+          }),
         },
       });
 
       res.status(201).json({
         success: true,
-        pdf: {
-          _id: newPdf._id,
-          fileId: newPdf.fileId,
-          fileName: newPdf.fileName,
-          fileSize: newPdf.fileSize,
-          usageTypes: newPdf.usageTypes,
-        },
+        pdf: newPdf,
       });
     } catch (error) {
       console.error('Upload error:', error);
+
+      if (error.code === 'P2002') {
+        return res.status(400).json({
+          success: false,
+          message: 'File with the same ID already exists',
+        });
+      }
+
       res.status(500).json({
         success: false,
         message: 'Upload failed',
@@ -115,19 +103,24 @@ router.post(
 
 // Download PDF endpoint
 router.get('/download/:id', async (req, res) => {
-  let bucket;
   try {
-    const pdf = await Pdf.findById(req.params.id);
-    if (!pdf || pdf.status === 'deleted') {
+    const pdf = await prisma.pdf.findUnique({
+      where: { id: parseInt(req.params.id) },
+    });
+
+    if (!pdf || pdf.status === 'INACTIVE') {
       return res.status(404).json({
         success: false,
         message: 'PDF not found',
       });
     }
 
-    bucket = new GridFSBucket(mongoose.connection.db, {
-      bucketName: 'pdfs',
-    });
+    if (!pdf.fileData) {
+      return res.status(404).json({
+        success: false,
+        message: 'File content not found',
+      });
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -135,8 +128,9 @@ router.get('/download/:id', async (req, res) => {
       `attachment; filename="${pdf.fileName}"`
     );
 
-    // Stream the file from GridFS to response
-    bucket.openDownloadStream(pdf.fileId).pipe(res);
+    const downloadStream = new stream.PassThrough();
+    downloadStream.end(Buffer.from(pdf.fileData, 'base64'));
+    downloadStream.pipe(res);
   } catch (error) {
     console.error('Download error:', error);
     res.status(500).json({
@@ -149,18 +143,12 @@ router.get('/download/:id', async (req, res) => {
 
 // Delete PDF endpoint
 router.delete('/delete/:id', async (req, res) => {
-  let bucket;
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id);
+    const pdf = await prisma.pdf.findUnique({
+      where: { id },
+    });
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid PDF ID',
-      });
-    }
-
-    const pdf = await Pdf.findById(id);
     if (!pdf) {
       return res.status(404).json({
         success: false,
@@ -168,14 +156,10 @@ router.delete('/delete/:id', async (req, res) => {
       });
     }
 
-    // Delete from GridFS
-    bucket = new GridFSBucket(mongoose.connection.db, {
-      bucketName: 'pdfs',
+    // Delete from PostgreSQL
+    await prisma.pdf.delete({
+      where: { id },
     });
-    await bucket.delete(pdf.fileId);
-
-    // Delete from MongoDB
-    await Pdf.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,
@@ -194,27 +178,27 @@ router.delete('/delete/:id', async (req, res) => {
 // Get all active PDFs
 router.get('/all', async (req, res) => {
   try {
-    const pdfs = await Pdf.find(
-      { status: 'active' },
-      { __v: 0 } // Exclude version key
-    )
-      .populate([
-        {
-          path: 'usageTypes.postId',
-          select: 'title -_id',
+    const pdfs = await prisma.pdf.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        post: {
+          select: {
+            titleEn: true,
+            titleBn: true,
+          },
         },
-        {
-          path: 'usageTypes.categoryId',
-          select: 'name -_id',
+        category: {
+          select: {
+            nameEn: true,
+            nameBn: true,
+          },
         },
-        {
-          path: 'metadata.uploadedBy',
-          select: 'username role -_id',
-        },
-      ])
-      .sort({ 'metadata.createdAt': -1 })
-      .lean()
-      .limit(100);
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 100,
+    });
 
     res.status(200).json({ success: true, pdfs });
   } catch (error) {

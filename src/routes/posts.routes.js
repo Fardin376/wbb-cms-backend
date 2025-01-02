@@ -1,14 +1,7 @@
 const express = require('express');
-const Post = require('../models/posts.model'); // Adjust the path to your Post model
-const Page = require('../models/page.model');
 const router = express.Router();
-// const auth = require('../middleware/auth');
-// const isAdmin = require('../middleware/isAdmin');
-const mongoose = require('mongoose');
-const Gallery = require('../models/gallery.model');
+const prisma = require('../services/db.service');
 const rateLimit = require('express-rate-limit');
-const Pdf = require('../models/pdf.model');
-const verifyTokenMiddleware = require('../middleware/tokenVerification');
 const authMiddleware = require('../middleware/auth');
 
 // Add rate limiting middleware
@@ -18,127 +11,79 @@ const createPostLimiter = rateLimit({
 });
 
 // Add auth middleware
-router.use(verifyTokenMiddleware);
 router.use(authMiddleware);
 
 // Create a new post
 router.post('/create', createPostLimiter, async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
-    const { title, content, pages, category } = req.body;
-    // const userId = req.user.userId;
+    const { titleEn, titleBn, contentEn, contentBn, pageIds, categoryId, status, isFeatured } = req.body;
 
-    // Validate required fields
-    if (
-      !title?.en ||
-      !title?.bn ||
-      !content?.en ||
-      !content?.bn ||
-      !pages?.length ||
-      !category
-    ) {
+    if (!titleEn || !titleBn || !contentEn || !contentBn || !pageIds?.length || !categoryId) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields',
-        details: {
-          title:
-            !title?.en || !title?.bn
-              ? 'Title is required in both languages'
-              : null,
-          content:
-            !content?.en || !content?.bn
-              ? 'Content is required in both languages'
-              : null,
-          pages: !pages?.length ? 'At least one page is required' : null,
-          category: !category ? 'Category is required' : null,
+      });
+    }
+
+    const post = await prisma.post.create({
+      data: {
+        titleEn,
+        titleBn,
+        contentEn,
+        contentBn,
+        slug: `${titleEn.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
+        status: status || 'DRAFT',
+        isFeatured: Boolean(isFeatured),
+        userId: req.user.userId,
+        categoryId: parseInt(categoryId),
+        pages: {
+          connect: pageIds.map((id) => ({ id: parseInt(id) })),
         },
-      });
-    }
-
-    // Validate ObjectIds
-    if (!mongoose.Types.ObjectId.isValid(category)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid ID format for category or creator',
-      });
-    }
-
-    // Convert pages to array if it's not already
-    const pagesArray = Array.isArray(pages) ? pages : [pages];
-
-    const postData = {
-      title,
-      content,
-      pages: pagesArray,
-      category,
-      createdBy: req.user.userId,
-      isActive: true,
-      slug: `${title.en
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
-    };
-
-    // Create the post
-    const newPost = await Post.create([postData], { session });
-
-    // Update pages with new post reference
-    await Page.updateMany(
-      { _id: { $in: pages } },
-      { $push: { posts: newPost[0]._id } },
-      { session }
-    );
-
-    await session.commitTransaction();
-    res.status(201).json({
-      success: true,
-      post: newPost[0],
+      },
+      include: {
+        category: true,
+        pages: true,
+      },
     });
+
+    res.status(201).json({ success: true, post });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error creating post:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error creating post',
-      error:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? error : null,
-    });
-  } finally {
-    session.endSession();
+    res.status(500).json({ success: false, message: 'Error creating post' });
   }
 });
+
 
 // Get all posts
 router.get('/all-posts', async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
-    let query = {};
+    const skip = (page - 1) * parseInt(limit);
 
-    if (status === 'active') {
-      query.isActive = true;
-    } else if (status === 'inactive') {
-      query.isActive = false;
-    }
+    const where = {};
+    if (status) where.status = status;
 
-    const posts = await Post.find(query)
-      .populate('pages', 'name')
-      .populate('category', 'name')
-      .populate('createdBy', 'role')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .lean();
-
-    const count = await Post.countDocuments(query);
+    const [posts, count] = await Promise.all([
+      prisma.post.findMany({
+        where,
+        include: {
+          pages: true,
+          category: true,
+          createdBy: {
+            select: { role: true },
+          },
+        },
+        skip,
+        take: parseInt(limit),
+      }),
+      prisma.post.count({ where }),
+    ]);
 
     res.status(200).json({
       success: true,
       posts,
       totalPages: Math.ceil(count / limit),
-      currentPage: page,
+      currentPage: parseInt(page),
     });
   } catch (error) {
     console.error('Error fetching posts:', error);
@@ -149,13 +94,19 @@ router.get('/all-posts', async (req, res) => {
 // Get a single post by ID
 router.get('/:id', async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id)
-      .populate('pages')
-      .populate('category');
-    if (!post)
+    const post = await prisma.post.findUnique({
+      where: { id: parseInt(req.params.id) },
+      include: {
+        pages: true,
+        category: true,
+      },
+    });
+
+    if (!post) {
       return res
         .status(404)
         .json({ success: false, message: 'Post not found' });
+    }
 
     res.status(200).json({ success: true, post });
   } catch (error) {
@@ -169,12 +120,16 @@ router.get('/by-category/:categoryId', async (req, res) => {
   try {
     const { categoryId } = req.params;
 
-    // Fetch posts that match the category ID
-    const posts = await Post.find({ category: categoryId })
-      .populate('layout')
-      .populate('pages')
-      .populate('category')
-      .populate('createdBy', 'role');
+    const posts = await prisma.post.findMany({
+      where: { categoryId: parseInt(categoryId) },
+      include: {
+        pages: true,
+        category: true,
+        createdBy: {
+          select: { role: true },
+        },
+      },
+    });
 
     if (!posts.length) {
       return res.status(404).json({
@@ -195,214 +150,130 @@ router.get('/by-category/:categoryId', async (req, res) => {
 
 // Update a post by ID
 router.put('/update/:id', async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { id } = req.params;
-    const { title, content, pages, category, createdBy } = req.body;
+    const { titleEn, titleBn, contentEn, contentBn, pageIds, categoryId, status, isFeatured } = req.body;
 
-    // Validate required fields
-    if (
-      !title?.en ||
-      !title?.bn ||
-      !content?.en ||
-      !content?.bn ||
-      !pages?.length ||
-      !category
-    ) {
+    if (!titleEn || !titleBn || !contentEn || !contentBn || !pageIds?.length || !categoryId) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields',
+        details: { titleEn, titleBn, contentEn, contentBn, pageIds, categoryId }
       });
     }
 
-    // Find existing post
-    const existingPost = await Post.findById(id);
-    if (!existingPost) {
-      return res.status(404).json({
-        success: false,
-        message: 'Post not found',
-      });
-    }
+    // // Handle image cleanup if necessary
+    // const oldPost = await prisma.post.findUnique({ where: { id: parseInt(id) } });
+    // if (oldPost.contentEn !== contentEn || oldPost.contentBn !== contentBn) {
+    //   // Extract image URLs from old content and new content
+    //   const oldImages = extractImageUrls(oldPost.contentEn).concat(extractImageUrls(oldPost.contentBn));
+    //   const newImages = extractImageUrls(contentEn).concat(extractImageUrls(contentBn));
 
-    // Remove post reference from old pages
-    await Page.updateMany(
-      { _id: { $in: existingPost.pages } },
-      { $pull: { posts: existingPost._id } },
-      { session }
-    );
+    //   // Find images to delete
+    //   const imagesToDelete = oldImages.filter(url => !newImages.includes(url));
+    //   await Promise.all(imagesToDelete.map(url => deletePostImage(url)));
+    // }
 
-    // Add post reference to new pages
-    await Page.updateMany(
-      { _id: { $in: pages } },
-      { $push: { posts: existingPost._id } },
-      { session }
-    );
-
-    // Update the post
-    const updatedPost = await Post.findByIdAndUpdate(
-      id,
-      {
-        title,
-        content,
-        pages,
-        category,
-        updatedAt: Date.now(),
+    const post = await prisma.post.update({
+      where: { id: parseInt(id) },
+      data: {
+        titleEn,
+        titleBn,
+        contentEn,
+        contentBn,
+        categoryId: parseInt(categoryId),
+        status: status || 'DRAFT',
+        isFeatured: Boolean(isFeatured),
+        pages: {
+          set: pageIds.map(id => ({ id: parseInt(id) })),
+        },
       },
-      { new: true, session }
-    );
-
-    await session.commitTransaction();
-    res.json({
-      success: true,
-      post: updatedPost,
+      include: {
+        pages: true,
+        category: true,
+      },
     });
+
+    res.json({ success: true, post });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error updating post:', error);
     res.status(500).json({
       success: false,
       message: 'Error updating post',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
-  } finally {
-    session.endSession();
   }
 });
 
 // Delete a post by ID
 router.delete('/delete/:id', async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
-    // Validate ID format
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid post ID format',
-      });
-    }
+    const { id } = req.params;
+    const postId = parseInt(id);
 
-    const post = await Post.findById(req.params.id);
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: 'Post not found',
-      });
-    }
-
-    // Remove post reference from pages
-    await Page.updateMany(
-      { _id: { $in: post.pages } },
-      { $pull: { posts: post._id } },
-      { session }
-    );
-
-    // Delete associated gallery items
-    await Gallery.deleteMany(
-      {
-        'usageTypes.isPost': true,
-        'usageTypes.postId': post._id,
-      },
-      { session }
-    );
-
-    // Find and delete associated PDFs
-    const pdfs = await Pdf.find({
-      'usageTypes.postId': post._id,
+    // First get all images associated with this post
+    const associatedImages = await prisma.gallery.findMany({
+      where: {
+        postId: postId
+      }
     });
 
-    // Delete PDF files from GridFS and their references
-    if (pdfs.length > 0) {
-      const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
-        bucketName: 'pdfs',
-      });
-
-      // Delete each PDF file from GridFS and its reference in MongoDB
-      await Promise.all(
-        pdfs.map(async (pdf) => {
-          try {
-            // Delete from GridFS
-            await bucket.delete(pdf.fileId);
-            // Delete PDF reference from MongoDB
-            await Pdf.findByIdAndDelete(pdf._id, { session });
-          } catch (error) {
-            console.error(`Error deleting PDF ${pdf._id}:`, error);
-            // Continue with other deletions even if one fails
-          }
-        })
-      );
-    }
+    // Delete all associated images from the gallery table
+    await prisma.gallery.deleteMany({
+      where: {
+        postId: postId
+      }
+    });
 
     // Delete the post
-    await Post.findByIdAndDelete(post._id, { session });
+    const post = await prisma.post.delete({
+      where: { id: postId },
+      include: {
+        pages: true,
+        category: true,
+      },
+    });
 
-    await session.commitTransaction();
+    // Delete the folder from Firebase
+    await deletePostFolder(postId);
+
+    // Return both the post and image URLs for frontend cleanup
     res.status(200).json({
       success: true,
-      message: 'Post and associated data (including PDFs) deleted successfully',
+      message: 'Post and associated images deleted successfully',
+      post,
+      imageUrls: associatedImages.map(img => img.url)
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error deleting post:', error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting post',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      message: 'Error deleting post and associated images'
     });
-  } finally {
-    session.endSession();
   }
 });
 
 // Update status toggle endpoint
-router.patch('/toggle-status/:id', async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+router.patch('/update-status/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { isActive } = req.body;
+    const { status } = req.body;
 
-    // Update post status
-    const post = await Post.findByIdAndUpdate(id, { isActive }, { new: true });
+    const post = await prisma.post.update({
+      where: { id: parseInt(id) },
+      data: { status },
+    });
 
-    if (!post) {
-      return res.status(404).json({
-        success: false,
-        message: 'Post not found',
-      });
-    }
-
-    // Update associated gallery images status
-    await Gallery.updateMany(
-      {
-        'usageTypes.isPost': true,
-        'usageTypes.postId': post._id,
-      },
-      {
-        status: isActive ? 'active' : 'inactive',
-      },
-      { session }
-    );
-
-    await session.commitTransaction();
     res.json({
       success: true,
-      message: 'Post and associated images status updated successfully',
+      message: 'Post status updated successfully',
       post,
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error updating status:', error);
     res.status(500).json({
       success: false,
       message: 'Error updating status',
     });
-  } finally {
-    session.endSession();
   }
 });
 
@@ -412,27 +283,25 @@ router.get('/by-page/:pageId', async (req, res) => {
     const { pageId } = req.params;
     const { category } = req.query;
 
-    if (!mongoose.Types.ObjectId.isValid(pageId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid page ID format',
-      });
-    }
-
-    let query = {
-      pages: pageId,
+    const where = {
+      pages: { some: { id: parseInt(pageId) } },
       isActive: true,
     };
 
-    // Add category filter if provided
-    if (category && mongoose.Types.ObjectId.isValid(category)) {
-      query.category = category;
+    if (category) {
+      where.categoryId = parseInt(category);
     }
 
-    const posts = await Post.find(query)
-      .populate('category')
-      .populate('createdBy', 'username role')
-      .sort({ createdAt: -1 });
+    const posts = await prisma.post.findMany({
+      where,
+      include: {
+        category: true,
+        createdBy: {
+          select: { username: true, role: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     res.status(200).json({
       success: true,
@@ -449,55 +318,74 @@ router.get('/by-page/:pageId', async (req, res) => {
 });
 
 // Toggle featured status
-router.patch(
-  '/toggle-featured/:id',
-  verifyTokenMiddleware,
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { isFeatured } = req.body;
+router.patch('/toggle-featured/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isFeatured } = req.body;
 
-      const post = await Post.findByIdAndUpdate(
-        id,
-        {
-          isFeatured,
-          updatedAt: Date.now(),
-        },
-        { new: true }
-      );
+    const post = await prisma.post.update({
+      where: { id: parseInt(id) },
+      data: {
+        isFeatured,
+        updatedAt: new Date(),
+      },
+    });
 
-      if (!post) {
-        return res.status(404).json({
-          success: false,
-          message: 'Post not found',
-        });
-      }
-
-      res.json({
-        success: true,
-        message: 'Featured status updated successfully',
-        post,
-      });
-    } catch (error) {
-      console.error('Error updating featured status:', error);
-      res.status(500).json({
+    if (!post) {
+      return res.status(404).json({
         success: false,
-        message: 'Error updating featured status',
+        message: 'Post not found',
       });
     }
+
+    res.json({
+      success: true,
+      message: 'Featured status updated successfully',
+      post,
+    });
+  } catch (error) {
+    console.error('Error updating featured status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating featured status',
+    });
   }
-);
+});
+
+router.patch('/:id/set-cover-image', async (req, res) => {
+  const { id } = req.params;
+  const { coverImage } = req.body;
+
+  try {
+    const updatedPost = await prisma.post.update({
+      where: { id: parseInt(id, 10) },
+      data: { coverImage },
+    });
+
+    res.json({ success: true, post: updatedPost });
+  } catch (error) {
+    console.error('Error updating cover image:', error);
+    res
+      .status(500)
+      .json({ success: false, message: 'Failed to update cover image' });
+  }
+});
+
+
 
 // Update the public featured posts route
 router.get('/public/featured', async (req, res) => {
   try {
-    const posts = await Post.find({
-      isActive: true,
-      isFeatured: true,
-    })
-      .populate('category', 'name')
-      .sort({ createdAt: -1 })
-      .lean();
+    const posts = await prisma.post.findMany({
+      where: {
+        isActive: true,
+        isFeatured: true,
+      },
+      include: {
+        category: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     res.status(200).json({
       success: true,

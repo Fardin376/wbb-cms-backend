@@ -1,45 +1,63 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const Banner = require('../models/banner.model');
-const verifyTokenMiddleware = require('../middleware/tokenVerification');
+const { PrismaClient } = require('@prisma/client');
 const authMiddleware = require('../middleware/auth');
+
+const prisma = new PrismaClient();
 const router = express.Router();
 
-// Add auth middleware
-router.use(verifyTokenMiddleware);
 router.use(authMiddleware);
 
-// Validation middleware
 const validateBannerUpload = (req, res, next) => {
-  const { url, fileName, uploadedBy } = req.body;
+  const { url, fileName } = req.body;
 
-  if (!url || !fileName || !uploadedBy) {
+  if (!url) {
     return res.status(400).json({
       success: false,
-      message: 'Missing required fields: url, fileName, or uploadedBy',
+      message: 'Missing required field: url',
     });
+  }
+
+  if (!fileName) {
+    req.body.fileName = 'External File'; // Assign a default file name if missing
   }
 
   next();
 };
 
-// Route to upload a new banner
 router.post('/upload', validateBannerUpload, async (req, res) => {
   try {
-    const { url, fileName, title, description } = req.body;
-
-    const newBanner = await Banner.create({
+    const {
       url,
       fileName,
-      title,
-      description,
-      uploadedBy: req.user.userId,
+      titleEn,
+      titleBn,
+      descriptionEn,
+      descriptionBn,
+      status,
+    } = req.body;
+
+    const banner = await prisma.banner.create({
+      data: {
+        url,
+        fileName,
+        titleEn,
+        titleBn,
+        descriptionEn,
+        descriptionBn,
+        status,
+        userId: req.user.userId, // Ensure req.user is populated correctly
+      },
+      include: {
+        uploadedBy: {
+          select: {
+            username: true,
+            role: true,
+          },
+        },
+      },
     });
 
-    res.status(201).json({
-      success: true,
-      banner: newBanner,
-    });
+    res.status(201).json({ success: true, banner });
   } catch (error) {
     console.error('Error uploading banner:', error);
     res.status(500).json({
@@ -49,12 +67,21 @@ router.post('/upload', validateBannerUpload, async (req, res) => {
   }
 });
 
-// Route to fetch all banners
 router.get('/all-banners', async (req, res) => {
   try {
-    const banners = await Banner.find()
-      .populate('uploadedBy', 'username role')
-      .sort({ createdAt: -1 });
+    const banners = await prisma.banner.findMany({
+      include: {
+        uploadedBy: {
+          select: {
+            username: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
     res.status(200).json({
       success: true,
@@ -70,17 +97,15 @@ router.get('/all-banners', async (req, res) => {
   }
 });
 
-// Route to delete a banner by ID
-router.delete('/banner/:id', async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const banner = await Banner.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
 
-    if (!banner) {
-      return res.status(404).json({
-        success: false,
-        message: 'Banner not found',
-      });
-    }
+    await prisma.banner.delete({
+      where: {
+        id: parseInt(id),
+      },
+    });
 
     res.status(200).json({
       success: true,
@@ -95,62 +120,34 @@ router.delete('/banner/:id', async (req, res) => {
   }
 });
 
-// Route to clean up orphaned banners (if additional references like Page exist)
-router.delete('/cleanup', async (req, res) => {
-  try {
-    const Page = mongoose.model('Page');
-
-    const banners = await Banner.find();
-
-    for (const banner of banners) {
-      if (banner.usageTypes?.pageId) {
-        const pageExists = await Page.findById(banner.usageTypes.pageId);
-        if (!pageExists) {
-          await Banner.findByIdAndDelete(banner._id);
-        }
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Orphaned banners cleaned up successfully',
-    });
-  } catch (error) {
-    console.error('Error cleaning up banners:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to clean up orphaned banners',
-    });
-  }
-});
-
 router.patch('/toggle-status/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // Expect "published" or "unpublished"
+    const { status } = req.body;
 
-    console.log('Toggle Status Route Hit:', req.params.id, req.body.status);
-
-    if (!['published', 'unpublished'].includes(status)) {
+    if (!['PUBLISHED', 'UNPUBLISHED'].includes(status)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid status value',
       });
     }
 
-    // Update banner status
-    const banner = await Banner.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    );
-
-    if (!banner) {
-      return res.status(404).json({
-        success: false,
-        message: 'Banner not found',
-      });
-    }
+    const banner = await prisma.banner.update({
+      where: {
+        id: parseInt(id),
+      },
+      data: {
+        status,
+      },
+      include: {
+        uploadedBy: {
+          select: {
+            username: true,
+            role: true,
+          },
+        },
+      },
+    });
 
     res.json({
       success: true,

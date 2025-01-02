@@ -1,25 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const FooterLink = require('../models/footerLinks.model');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 // Duplicate URL check middleware
 const checkDuplicateUrl = async (req, res, next) => {
   try {
     const { url } = req.body;
-    const existingFooterLink = await FooterLink.findOne({ url });
+    const existingFooterLink = await prisma.footerLink.findFirst({
+      where: { url },
+    });
 
-    // If updating, exclude the current footer link from the duplicate check
-    if (req.params.id) {
-      if (
-        existingFooterLink &&
-        existingFooterLink._id.toString() !== req.params.id
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'Footer link with this URL already exists',
-        });
-      }
-    } else if (existingFooterLink) {
+    if (
+      existingFooterLink &&
+      existingFooterLink.id !== parseInt(req.params.id)
+    ) {
       return res.status(400).json({
         success: false,
         message: 'Footer link with this URL already exists',
@@ -36,19 +31,23 @@ const checkDuplicateUrl = async (req, res, next) => {
 
 router.post('/create-footer-links', checkDuplicateUrl, async (req, res) => {
   try {
-    const { position, name, url, serial, status } = req.body;
-    const newFooterLink = new FooterLink({
-      position,
-      name,
-      url,
-      serial,
-      status,
+    const { position, nameEn, nameBn, url, serial, status } = req.body;
+
+    const footerLink = await prisma.footerLink.create({
+      data: {
+        position,
+        nameEn,
+        nameBn,
+        url,
+        serial,
+        status: status || 'UNPUBLISHED',
+      },
     });
-    const savedFooterLink = await newFooterLink.save();
+
     res.status(201).json({
       success: true,
       message: 'Footer link created successfully',
-      data: savedFooterLink,
+      data: footerLink,
     });
   } catch (error) {
     res.status(400).json({
@@ -61,49 +60,71 @@ router.post('/create-footer-links', checkDuplicateUrl, async (req, res) => {
 
 router.get('/all-footer-links', async (req, res) => {
   try {
-    const footerLinks = await FooterLink.find().sort({ serial: 1 }); // Sort by serial for ordering
-    res.status(201).json({
+    const footerLinks = await prisma.footerLink.findMany({
+      orderBy: { serial: 'asc' },
+    });
+
+    res.status(200).json({
       success: true,
-      message: 'Footer link fetched successfully',
-      footers: footerLinks,
+      message: 'Footer links fetched successfully',
+      data: footerLinks,
     });
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching footer links', error });
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching footer links',
+      error: error.message,
+    });
   }
 });
 
 router.get('/footer-links/:id', async (req, res) => {
   try {
-    const footerLink = await FooterLink.findById(req.params.id);
+    const footerLink = await prisma.footerLink.findUnique({
+      where: { id: parseInt(req.params.id) },
+    });
+
     if (!footerLink) {
       return res.status(404).json({ message: 'Footer link not found' });
     }
+
     res.status(200).json(footerLink);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching footer link', error });
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching footer link',
+      error: error.message,
+    });
   }
 });
 
 router.patch('/footer-links/:id', checkDuplicateUrl, async (req, res) => {
   try {
     const { position, name, url, serial, status } = req.body;
-    const updatedFooterLink = await FooterLink.findByIdAndUpdate(
-      req.params.id,
-      { position, name, url, serial, status },
-      { new: true, runValidators: true }
-    );
-    if (!updatedFooterLink) {
-      return res.status(404).json({
-        success: false,
-        message: 'Footer link not found',
-      });
-    }
+
+    const updatedFooterLink = await prisma.footerLink.update({
+      where: { id: parseInt(req.params.id) },
+      data: {
+        position,
+        name,
+        url,
+        serial,
+        status,
+      },
+    });
+
     res.status(200).json({
       success: true,
       message: 'Footer link updated successfully',
       data: updatedFooterLink,
     });
   } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({
+        success: false,
+        message: 'Footer link not found',
+      });
+    }
     res.status(400).json({
       success: false,
       message: 'Error updating footer link',
@@ -114,13 +135,26 @@ router.patch('/footer-links/:id', checkDuplicateUrl, async (req, res) => {
 
 router.delete('/footer-links/:id', async (req, res) => {
   try {
-    const deletedFooterLink = await FooterLink.findByIdAndDelete(req.params.id);
-    if (!deletedFooterLink) {
-      return res.status(404).json({ message: 'Footer link not found' });
-    }
-    res.status(200).json({ message: 'Footer link deleted successfully' });
+    await prisma.footerLink.delete({
+      where: { id: parseInt(req.params.id) },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Footer link deleted successfully',
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Error deleting footer link', error });
+    if (error.code === 'P2025') {
+      return res.status(404).json({
+        success: false,
+        message: 'Footer link not found',
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting footer link',
+      error: error.message,
+    });
   }
 });
 

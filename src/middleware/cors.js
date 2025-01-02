@@ -1,15 +1,15 @@
 const cors = require('cors');
 
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://wbb-cms-frontend.vercel.app',
   'https://wbb-cms-admin-panel.vercel.app',
+  'https://wbb-cms-frontend.vercel.app',
+  'http://localhost:5174',
+  'http://localhost:5173',
 ];
 
-const corsMiddleware = cors({
+const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.includes(origin) || !origin) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -28,17 +28,11 @@ const corsMiddleware = cors({
     'Content-MD5',
     'Date',
     'X-Api-Version',
+    'x-delete-from-editor',
+    'x-requested-with',
   ],
-});
-
-const cookieSettings = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'Lax',
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
 };
 
-module.exports = {
-  corsMiddleware,
-  cookieSettings,
-};
+module.exports = cors(corsOptions);

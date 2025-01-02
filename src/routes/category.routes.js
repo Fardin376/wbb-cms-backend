@@ -1,36 +1,38 @@
 const express = require('express');
-const Category = require('../models/category.model'); // Adjust the path to the Category model as needed
 const router = express.Router();
-const mongoose = require('mongoose');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 const xss = require('xss');
-const authorize = require('../middleware/authorize');
 const authMiddleware = require('../middleware/auth');
-const verifyTokenMiddleware = require('../middleware/tokenVerification');
 
 // Add auth middleware
-router.use(verifyTokenMiddleware)
 router.use(authMiddleware);
 
 // Add validation middleware
 const validateCategory = async (req, res, next) => {
-  const { name, type } = req.body;
+  const { nameEn, nameBn, type } = req.body;
 
-  if (!name?.en || !name?.bn) {
+  if (!nameEn || !nameBn || !type) {
     return res.status(400).json({
       success: false,
-      message: 'Both English and Bangla names are required',
+      message: 'Category name (English & Bangla) and type are required',
     });
   }
 
   // Check for existing category
-  const existingCategory = await Category.findOne({
-    'name.en': name.en.toLowerCase(),
+  const existingCategory = await prisma.category.findFirst({
+    where: {
+      OR: [
+        { nameEn },
+        { nameBn }
+      ],
+    },
   });
 
   if (existingCategory) {
     return res.status(400).json({
       success: false,
-      message: 'Category already exists',
+      message: 'Category already exists with this name',
     });
   }
 
@@ -41,30 +43,31 @@ const validateCategory = async (req, res, next) => {
 router.post(
   '/create-categories',
   validateCategory,
-  authorize('admin' || 'superadmin'),
   async (req, res) => {
     try {
-      const { name, type, createdBy } = req.body;
+      const { nameEn, nameBn, type } = req.body;
+      const userId = req.user.id; // Assuming user ID is set by auth middleware
 
-      if (!mongoose.Types.ObjectId.isValid(createdBy)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid user ID',
-        });
-      }
-
-      const sanitizedName = {
-        en: xss(name.en.trim()),
-        bn: xss(name.bn.trim()),
+      const sanitizedData = {
+        nameEn: xss(nameEn.trim()),
+        nameBn: xss(nameBn.trim()),
+        type: type,
+        userId,
       };
 
-      const category = new Category({
-        name: sanitizedName,
-        type,
-        createdBy,
+      const category = await prisma.category.create({
+        data: sanitizedData,
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              role: true,
+            },
+          },
+        },
       });
 
-      await category.save();
       res.status(201).json({
         success: true,
         category,
@@ -82,19 +85,30 @@ router.post(
 // Get all categories
 router.get('/categories', async (req, res) => {
   try {
-    const categories = await Category.find().populate(
-      'createdBy',
-      'name email'
-    );
+    const categories = await prisma.category.findMany({
+      where: {
+        isActive: true,
+      },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+      },
+    });
+
     res.status(200).json({
       success: true,
-      categories: categories
+      categories,
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching categories' 
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching categories',
     });
   }
 });
@@ -102,10 +116,21 @@ router.get('/categories', async (req, res) => {
 // Get a specific category by ID
 router.get('/categories/:id', async (req, res) => {
   try {
-    const category = await Category.findById(req.params.id).populate(
-      'createdBy',
-      'name email'
-    );
+    const category = await prisma.category.findUnique({
+      where: {
+        id: parseInt(req.params.id),
+      },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+      },
+    });
+
     if (!category) {
       return res.status(404).json({ message: 'Category not found' });
     }
@@ -117,36 +142,70 @@ router.get('/categories/:id', async (req, res) => {
 });
 
 // Update an existing category
-router.put('/categories/:id', async (req, res) => {
-  try {
-    const { name, createdBy } = req.body;
-    const updatedCategory = await Category.findByIdAndUpdate(
-      req.params.id,
-      { name, createdBy, updatedAt: Date.now() },
-      { new: true } // Return the updated document
-    );
-    if (!updatedCategory) {
-      return res.status(404).json({ message: 'Category not found' });
-    }
-    res.status(200).json(updatedCategory);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error updating category' });
-  }
-});
+router.put(
+  '/categories/:id',
+  async (req, res) => {
+    try {
+      const { nameEn, nameBn, type, isActive } = req.body;
+      const userId = req.user.id;
 
-// Delete a category
-router.delete('/categories/:id', async (req, res) => {
-  try {
-    const category = await Category.findByIdAndDelete(req.params.id);
-    if (!category) {
-      return res.status(404).json({ message: 'Category not found' });
+      const updatedCategory = await prisma.category.update({
+        where: {
+          id: parseInt(req.params.id),
+        },
+        data: {
+          nameEn: nameEn ? xss(nameEn.trim()) : undefined,
+          nameBn: nameBn ? xss(nameBn.trim()) : undefined,
+          type: type || undefined,
+          isActive: isActive === undefined ? undefined : isActive,
+        },
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      res.status(200).json(updatedCategory);
+    } catch (error) {
+      console.error(error);
+      if (error.code === 'P2002') {
+        return res
+          .status(400)
+          .json({ message: 'Category name already exists' });
+      }
+      res.status(500).json({ message: 'Error updating category' });
     }
-    res.status(200).json({ message: 'Category deleted successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error deleting category' });
   }
-});
+);
+
+// Delete a category (soft delete)
+router.delete(
+  '/categories/:id',
+  async (req, res) => {
+    try {
+      const category = await prisma.category.update({
+        where: {
+          id: parseInt(req.params.id),
+        },
+        data: {
+          isActive: false,
+        },
+      });
+
+      if (!category) {
+        return res.status(404).json({ message: 'Category not found' });
+      }
+      res.status(200).json({ message: 'Category deleted successfully' });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Error deleting category' });
+    }
+  }
+);
 
 module.exports = router;

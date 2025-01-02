@@ -1,23 +1,22 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
-const Page = require('../models/page.model');
-const Layout = require('../models/layout.model');
+const prisma = require('../services/db.service');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const verifyTokenMiddleware = require('../middleware/tokenVerification');
 const authMiddleware = require('../middleware/auth');
 const fs = require('fs').promises;
-const fsPromises = require('fs/promises');
 
 const createPageValidation = [
   body('name').trim().isLength({ min: 2, max: 100 }),
+  body('titleEn').trim().isLength({ min: 2, max: 100 }),
+  body('titleBn').trim().isLength({ min: 2, max: 100 }),
   body('slug')
     .trim()
     .matches(/^[a-z0-9-/]+$/),
-  body('layoutId').isMongoId().optional(),
-  body('layout').isMongoId().optional(),
+  body('layoutId').isInt().optional(),
+  body('layout').isInt().optional(),
 ];
 
 const limiter = rateLimit({
@@ -26,89 +25,65 @@ const limiter = rateLimit({
 });
 
 
-// Public routes
-router.get('/public/by-slug/:slug', async (req, res) => {
-  try {
-    const page = await Page.findOne({
-      slug: req.params.slug,
-      isActive: true,
-      status: 'published', // Only get published pages
-    })
-      .populate({
-        path: 'layout',
-        select: 'name content',
-      })
-      .lean();
-
-    if (!page) {
-      return res.status(404).json({
-        success: false,
-        message: 'Page not found',
-      });
-    }
-
-    // Ensure layout content is properly parsed
-    if (page.layout && page.layout.content) {
-      try {
-        if (typeof page.layout.content === 'string') {
-          page.layout.content = JSON.parse(page.layout.content);
-        }
-      } catch (parseError) {
-        console.error('Error parsing layout content:', parseError);
-        page.layout.content = { html: '', css: '' };
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      page,
-    });
-  } catch (error) {
-    console.error('Error fetching page by slug:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching page',
-      error: error.message,
-    });
-  }
-});
-
 // Protected routes below
 // Add auth middleware
-router.use(verifyTokenMiddleware);
 router.use(authMiddleware);
 
 // Create a new page
 router.post('/create', limiter, createPageValidation, async (req, res) => {
   try {
-    const { name, slug, layout } = req.body;
-
-    const layoutDoc = await Layout.findById(layout);
-    if (!layoutDoc) {
-      return res.status(400).json({
+    const { name, titleEn, titleBn, slug, layout } = req.body;
+    
+    // Get user ID from req.user
+    const userId = req.user.id || req.user.userId;
+    
+    if (!userId) {
+      return res.status(401).json({
         success: false,
-        message: 'Invalid layout selected',
+        message: 'Authentication required'
       });
     }
 
-    const page = new Page({
-      name,
-      slug,
-      layout,
-      metadata: {
-        createdBy: req.user.userId,
-        lastModifiedBy: req.user.userId,
-      },
+    const layoutDoc = await prisma.layout.findUnique({ 
+      where: { id: parseInt(layout) }
     });
 
-    await page.save();
+    if (!layoutDoc) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid layout selected'
+      });
+    }
 
-    const populatedPage = await Page.findById(page._id).populate('layout');
+    const page = await prisma.page.create({
+      data: {
+        name,
+        titleEn,
+        titleBn,
+        slug,
+        layout: { 
+          connect: { id: parseInt(layout) }
+        },
+        createdBy: {
+          connect: { id: userId }
+        }
+      },
+      include: {
+        layout: true,
+        createdBy: {
+          select: {
+            id: true,
+            username: true,
+            email: true
+          }
+        }
+      }
+    });
 
     res.status(201).json({
       success: true,
       message: 'Page created successfully',
-      page: populatedPage,
+      page,
     });
   } catch (error) {
     console.error('Error creating page:', error);
@@ -123,31 +98,33 @@ router.post('/create', limiter, createPageValidation, async (req, res) => {
 // Get all pages
 router.get('/all-pages', async (req, res) => {
   try {
-    const pages = await Page.find()
-      .populate({
-        path: 'layout',
-        select: 'name content',
-      })
-      .populate({
-        path: 'metadata.createdBy',
-        select: 'username role',
-      })
-      .populate({
-        path: 'metadata.lastModifiedBy',
-        select: 'username role',
-      })
-      .lean();
+    const pages = await prisma.page.findMany({
+      include: {
+        layout: true,
+        createdBy: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+          },
+        },
+        posts: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
     res.status(200).json({
       success: true,
       pages,
+      count: pages.length,
     });
   } catch (error) {
     console.error('Error fetching pages:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching pages',
-      error: error.message,
     });
   }
 });
@@ -155,30 +132,16 @@ router.get('/all-pages', async (req, res) => {
 // Get a single page by ID
 router.get('/:id', async (req, res) => {
   try {
-    const page = await Page.findById(req.params.id)
-      .populate({
-        path: 'layout',
-        select: 'name content',
-      })
-      .lean();
+    const page = await prisma.page.findUnique({
+      where: { id: parseInt(req.params.id) },
+      include: { layout: true },
+    });
 
     if (!page) {
       return res.status(404).json({
         success: false,
         message: 'Page not found',
       });
-    }
-
-    // Ensure layout content is properly parsed
-    if (page.layout && page.layout.content) {
-      try {
-        if (typeof page.layout.content === 'string') {
-          page.layout.content = JSON.parse(page.layout.content);
-        }
-      } catch (parseError) {
-        console.error('Error parsing layout content:', parseError);
-        page.layout.content = { html: '', css: '' };
-      }
     }
 
     res.status(200).json({
@@ -196,7 +159,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Update template endpoint
-router.put('/update-template/:id', verifyTokenMiddleware, async (req, res) => {
+router.put('/update-template/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { template, language } = req.body;
@@ -205,7 +168,7 @@ router.put('/update-template/:id', verifyTokenMiddleware, async (req, res) => {
     if (!template || !template.html) {
       return res.status(400).json({
         success: false,
-        message: 'Template content is required',
+        message: 'Template content is required'
       });
     }
 
@@ -213,48 +176,30 @@ router.put('/update-template/:id', verifyTokenMiddleware, async (req, res) => {
     if (!['en', 'bn'].includes(language)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid language specified',
+        message: 'Invalid language specified'
       });
     }
 
-    // First, get the existing page
-    const page = await Page.findById(id);
-    if (!page) {
-      return res.status(404).json({
-        success: false,
-        message: 'Page not found',
-      });
-    }
+    const templateField = language === 'en' ? 'templateEn' : 'templateBn';
 
-    // Initialize template structure if it doesn't exist
-    if (!page.template) {
-      page.template = {
-        en: { content: null, lastModified: new Date() },
-        bn: { content: null, lastModified: new Date() },
-      };
-    }
+    const updatedPage = await prisma.page.update({
+      where: { id: parseInt(id) },
+      data: {
+        [templateField]: {
+          content: template,
+          lastModified: new Date()
+        },
+        metadata: {
+          lastModifiedBy: req.user.id,
+          updatedAt: new Date()
+        }
+      }
+    });
 
-    // Update the template content
-    page.template[language] = {
-      content: template,
-      lastModified: new Date(),
-    };
-
-    // Update metadata
-    page.metadata = {
-      ...page.metadata,
-      lastModifiedBy: req.user._id,
-      updatedAt: new Date(),
-    };
-
-    // Save the updated page
-    const updatedPage = await page.save();
-
-    // Return success response
     res.status(200).json({
       success: true,
       message: 'Template updated successfully',
-      page: updatedPage,
+      page: updatedPage
     });
   } catch (error) {
     console.error('Error updating template:', error);
@@ -267,50 +212,52 @@ router.put('/update-template/:id', verifyTokenMiddleware, async (req, res) => {
 });
 
 // Add template retrieval endpoint
-router.get(
-  '/template/:id/:language',
-  verifyTokenMiddleware,
-  async (req, res) => {
-    try {
-      const { id, language } = req.params;
+router.get('/template/:id/:language', async (req, res) => {
+  try {
+    const { id, language } = req.params;
 
-      if (!['en', 'bn'].includes(language)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid language specified',
-        });
-      }
-
-      const page = await Page.findById(id)
-        .select(`template.${language}`)
-        .lean();
-
-      if (!page) {
-        return res.status(404).json({
-          success: false,
-          message: 'Page not found',
-        });
-      }
-
-      res.status(200).json({
-        success: true,
-        template: page.template[language],
-      });
-    } catch (error) {
-      console.error('Error fetching template:', error);
-      res.status(500).json({
+    if (!['en', 'bn'].includes(language)) {
+      return res.status(400).json({
         success: false,
-        message: 'Error fetching template',
-        error: error.message,
+        message: 'Invalid language specified'
       });
     }
+
+    const templateField = language === 'en' ? 'templateEn' : 'templateBn';
+
+    const page = await prisma.page.findUnique({
+      where: { id: parseInt(id) },
+      select: { [templateField]: true }
+    });
+
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      template: page[templateField]
+    });
+  } catch (error) {
+    console.error('Error fetching template:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching template',
+      error: error.message,
+    });
   }
-);
+});
 
 // Delete a page by ID
 router.delete('/delete/:id', async (req, res) => {
   try {
-    const deletedPage = await Page.findByIdAndDelete(req.params.id);
+    const deletedPage = await prisma.page.delete({
+      where: { id: parseInt(req.params.id) },
+    });
+
     if (!deletedPage)
       return res
         .status(404)
@@ -325,86 +272,16 @@ router.delete('/delete/:id', async (req, res) => {
   }
 });
 
-// Add status toggle endpoint for pages
-router.patch('/toggle-status/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { isActive } = req.body;
-
-    const page = await Page.findByIdAndUpdate(id, { isActive }, { new: true });
-
-    if (!page) {
-      return res.status(404).json({
-        success: false,
-        message: 'Page not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Status updated successfully',
-      page,
-    });
-  } catch (error) {
-    console.error('Error updating status:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating status',
-    });
-  }
-});
-
-router.patch('/update-status/:id', verifyTokenMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!['draft', 'published', 'archived'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid status value',
-      });
-    }
-
-    const page = await Page.findByIdAndUpdate(
-      id,
-      {
-        status,
-        'metadata.lastModifiedBy': req.user._id,
-        'metadata.updatedAt': new Date(),
-      },
-      { new: true }
-    );
-
-    if (!page) {
-      return res.status(404).json({
-        success: false,
-        message: 'Page not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Status updated successfully',
-      page,
-    });
-  } catch (error) {
-    console.error('Error updating status:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating status',
-    });
-  }
-});
-
 // Update a page
 router.put('/update/:id', createPageValidation, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, slug, layout } = req.body;
+    const { titleEn, titleBn, slug, layout } = req.body;
 
     // Check if page exists
-    const existingPage = await Page.findById(id);
+    const existingPage = await prisma.page.findUnique({
+      where: { id: parseInt(id) },
+    });
     if (!existingPage) {
       return res.status(404).json({
         success: false,
@@ -413,7 +290,7 @@ router.put('/update/:id', createPageValidation, async (req, res) => {
     }
 
     // Check if layout exists
-    const layoutDoc = await Layout.findById(layout);
+    const layoutDoc = await prisma.layout.findUnique({ where: { id: layout } });
     if (!layoutDoc) {
       return res.status(400).json({
         success: false,
@@ -422,17 +299,22 @@ router.put('/update/:id', createPageValidation, async (req, res) => {
     }
 
     // Update the page
-    const updatedPage = await Page.findByIdAndUpdate(
-      id,
-      {
-        name,
+    const updatedPage = await prisma.page.update({
+      where: { id: parseInt(id) },
+      data: {
+        titleEn,
+        titleBn,
         slug,
-        layout,
-        'metadata.lastModifiedBy': req.user._id,
-        'metadata.updatedAt': new Date(),
+        layout: { connect: { id: layout } },
+        metadata: {
+          update: {
+            lastModifiedBy: req.user._id,
+            updatedAt: new Date(),
+          },
+        },
       },
-      { new: true }
-    ).populate('layout');
+      include: { layout: true },
+    });
 
     res.status(200).json({
       success: true,
@@ -452,7 +334,7 @@ router.put('/update/:id', createPageValidation, async (req, res) => {
 // Add chunked template update endpoint
 router.put(
   '/update-template/:id/chunk',
-  verifyTokenMiddleware,
+
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -484,14 +366,10 @@ router.put(
           'metadata.updatedAt': new Date(),
         };
 
-        const updatedPage = await Page.findByIdAndUpdate(
-          id,
-          { $set: updateData },
-          {
-            new: true,
-            runValidators: true,
-          }
-        );
+        const updatedPage = await prisma.page.update({
+          where: { id: parseInt(id) },
+          data: updateData,
+        });
 
         // Cleanup chunks
         delete global.templateChunks[id];
@@ -518,7 +396,41 @@ router.put(
   }
 );
 
-// Add this route to handle asset uploads
+router.patch('/update-status/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
 
+    if (!['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status value'
+      });
+    }
+
+    const page = await prisma.page.update({
+      where: { id: parseInt(id) },
+      data: {
+        status: status.toUpperCase(),
+        metadata: {
+          lastModifiedBy: req.user.id,
+          updatedAt: new Date()
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Status updated successfully',
+      page
+    });
+  } catch (error) {
+    console.error('Error updating status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating status'
+    });
+  }
+});
 
 module.exports = router;

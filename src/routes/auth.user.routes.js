@@ -1,47 +1,102 @@
 const express = require('express');
-const User = require('../models/user.model');
-const authMiddleware = require('../middleware/auth');
 const bcrypt = require('bcrypt');
-const isAdmin = require('../middleware/isAdmin');
+const authMiddleware = require('../middleware/auth');
 const generateToken = require('../middleware/generateToken');
 const clearAuthCookie = require('../controllers/clearAuthCookie');
 
 const router = express.Router();
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+// Create a new user
+router.post('/register', async (req, res) => {
+  try {
+    const { username, email, password, role } = req.body;
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        username,
+        email,
+        password: hashedPassword,
+        role: role.toUpperCase(),
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+      },
+    });
+
+    console.log('User created:', user);
+    res.status(201).json({ success: true, user });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 // User login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res
-        .status(401)
-        .json({ success: false, message: 'Invalid credentials' });
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required',
+      });
     }
 
-    const token = await generateToken(user._id, user.role);
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
 
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials',
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is inactive',
+      });
+    }
+
+    const token = generateToken(user.id, user.role);
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: '/',
     });
 
-    res.status(200).json({
+    res.json({
       success: true,
       user: {
-        _id: user._id,
-        username: user.username,
+        id: user.id,
         email: user.email,
         role: user.role,
+        username: user.username,
       },
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ success: false, message: 'Login failed' });
+    res.status(500).json({
+      success: false,
+      message: 'An error occurred during login',
+    });
   }
 });
 
@@ -52,9 +107,11 @@ router.post('/logout', authMiddleware, (req, res) => {
 });
 
 // Admin-only route to get all users
-router.get('/users', async (req, res) => {
+router.get('/users', authMiddleware, async (req, res) => {
   try {
-    const users = await User.find({}, 'username email role');
+    const users = await prisma.user.findMany({
+      select: { id: true, username: true, email: true, role: true },
+    });
     res.status(200).json({ success: true, users });
   } catch (error) {
     console.error('Failed to fetch users:', error);
@@ -62,40 +119,44 @@ router.get('/users', async (req, res) => {
   }
 });
 
-// Verify token validity
-router.get('/verify-token', authMiddleware, (req, res) => {
-  res.status(200).json({ isAuthenticated: true });
-});
-
-// /auth/check route to validate token and fetch user details
+// Validate token and fetch user details
 router.get('/check', authMiddleware, async (req, res) => {
   try {
-    console.time('Auth Check Execution Time'); // Start timer
-
-    const user = await User.findById(req.user.userId).select('-password'); // Exclude password
-    if (!user) {
-      console.warn(`User not found for ID: ${req.user.userId}`);
-      return res
-        .status(404)
-        .json({ success: false, message: 'User not found' });
+    // The user object is already validated in the middleware
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid session',
+      });
     }
 
-    console.log('User fetched:', user); // Debugging user details
+    // No need to query database again, use the user data from middleware
+    const user = req.user;
+
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is inactive',
+      });
+    }
 
     res.status(200).json({
       success: true,
+      isAuthenticated: true,
       user: {
-        _id: user._id,
-        username: user.username,
+        id: user.id,
         email: user.email,
         role: user.role,
+        username: user.username,
       },
     });
-
-    console.timeEnd('Auth Check Execution Time'); // End timer
   } catch (error) {
-    console.error('Error in /auth/check:', error.message);
-    res.status(500).json({ success: false, message: 'Failed to fetch user' });
+    console.error('Error in auth check:', error);
+    res.status(401).json({ 
+      success: false, 
+      message: 'Invalid session',
+      error: error.message 
+    });
   }
 });
 
