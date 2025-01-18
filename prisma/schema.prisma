@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -32,8 +32,8 @@ model Post {
   id         Int      @id @default(autoincrement())
   titleEn    String   @db.VarChar(500)
   titleBn    String   @db.VarChar(500)
-  contentEn  String   @db.VarChar(500000)
-  contentBn  String   @db.VarChar(500000)
+  contentEn  String   @db.LongText
+  contentBn  String   @db.LongText
   coverImage String?
   slug       String   @unique
   status     Status   @default(DRAFT)
@@ -179,7 +179,7 @@ model Pdf {
 
 model Menu {
   id             Int      @id @default(autoincrement())
-  serial         Int      @unique @default(autoincrement())
+  serial         Int      @unique
   titleEn        String   @unique
   titleBn        String   @unique
   slug           String   @unique

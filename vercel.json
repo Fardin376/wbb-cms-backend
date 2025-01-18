@@ -20,6 +20,6 @@
     }
   ],
   "env": {
-    "DATABASE_URL": "postgresql://postgres:1708admin@localhost:5000/wbb_db?schema=public"
+    "DATABASE_URL": "postgresql://fardin:-v7hmRYzVp_N0VOn6Lyojg@lucid-sawfish-3961.jxf.gcp-europe-west1.cockroachlabs.cloud:26257/wbb_db?sslmode=verify-full"
   }
 }

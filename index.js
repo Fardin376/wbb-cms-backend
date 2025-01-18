@@ -92,7 +92,7 @@ app.get('/', (req, res) => {
 prisma
   .$connect()
   .then(() => {
-    console.log('Connected to PostgreSQL via Prisma');
+    console.log('Connected to Database via Prisma');
     app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
     });
